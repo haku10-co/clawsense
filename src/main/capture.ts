@@ -6,7 +6,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const APP_DATA_DIR = path.join(os.homedir(), "Library", "Application Support", "ClawSense");
-const SCREENSHOTS_DIR = path.join(APP_DATA_DIR, "screenshots");
+export const SCREENSHOTS_DIR = path.join(APP_DATA_DIR, "screenshots");
 
 function safeFilePart(value: string): string {
   return value.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120) || "trigger";

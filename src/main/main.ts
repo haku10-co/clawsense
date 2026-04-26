@@ -1,7 +1,7 @@
-import { app, BrowserWindow, Menu, Tray, globalShortcut, ipcMain } from "electron";
+import { app, BrowserWindow, Menu, Tray, globalShortcut, ipcMain, shell } from "electron";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-import { captureScreen } from "./capture";
+import { captureScreen, SCREENSHOTS_DIR } from "./capture";
 import { askClaude } from "./claude";
 import { gatherContext, renderNoteBlock } from "./context";
 import { logEvent } from "./logger";
@@ -169,6 +169,7 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
 }
 
 function buildMenu(): Menu {
+  const lastScreenshot = lastSuggestion?.screenshotPath;
   return Menu.buildFromTemplate([
     { label: "ClawSense に聞く", click: () => void runAsk("menu") },
     {
@@ -178,6 +179,20 @@ function buildMenu(): Menu {
     },
     { type: "separator" },
     { label: "プロンプトを編集...", click: () => showPromptsEditor() },
+    {
+      label: "デバッグ",
+      submenu: [
+        {
+          label: "スクショフォルダを開く",
+          click: () => void shell.openPath(SCREENSHOTS_DIR)
+        },
+        {
+          label: "直前のスクショを開く",
+          enabled: Boolean(lastScreenshot),
+          click: () => lastScreenshot && void shell.openPath(lastScreenshot)
+        }
+      ]
+    },
     { label: "終了", click: () => app.quit() }
   ]);
 }
