@@ -6,6 +6,11 @@ import { askClaude } from "./claude";
 import { gatherContext, renderNoteBlock } from "./context";
 import { logEvent } from "./logger";
 import {
+  getScreenAccessStatus,
+  openScreenRecordingSettings,
+  triggerScreenAccessPrompt
+} from "./permissions";
+import {
   ensurePromptsExist,
   readAllPrompts,
   resetPrompts,
@@ -116,6 +121,32 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
   const triggerId = randomUUID();
   const startedAt = Date.now();
 
+  const accessStatus = getScreenAccessStatus();
+  if (accessStatus !== "granted") {
+    void triggerScreenAccessPrompt();
+    showSuggestion({
+      triggerId,
+      headline: "画面収録の権限が必要です",
+      hint:
+        accessStatus === "denied"
+          ? "システム設定 > プライバシーとセキュリティ > 画面収録 で ClawSense を許可し、アプリを再起動してください。"
+          : "ダイアログが表示されたら『許可』を押してください。許可後はアプリの再起動が必要です。",
+      actions: [],
+      rawText: `screen-access status: ${accessStatus}`,
+      latencyMs: 0,
+      screenshotPath: "",
+      pending: false
+    });
+    await logEvent({
+      type: "permission_blocked",
+      triggerId,
+      kind: "screen-recording",
+      status: accessStatus,
+      createdAt: new Date().toISOString()
+    });
+    return;
+  }
+
   try {
     const screenshotPath = await captureScreen(triggerId);
     showLoading(triggerId, screenshotPath);
@@ -182,6 +213,11 @@ function buildMenu(): Menu {
     {
       label: "デバッグ",
       submenu: [
+        {
+          label: "画面収録の設定を開く",
+          click: () => openScreenRecordingSettings()
+        },
+        { type: "separator" },
         {
           label: "スクショフォルダを開く",
           click: () => void shell.openPath(SCREENSHOTS_DIR)
