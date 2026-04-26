@@ -48,5 +48,8 @@ contextBridge.exposeInMainWorld("clawSense", {
   },
   resetPrompts(): Promise<PromptsBundle> {
     return ipcRenderer.invoke("prompts:reset");
+  },
+  openSettings(): Promise<void> {
+    return ipcRenderer.invoke("settings:open");
   }
 });

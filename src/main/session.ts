@@ -9,6 +9,7 @@ type Session = {
   selectedLabel: string;
   turns: Turn[];
   sessionId: string;
+  claudeSessionCreated: boolean;
 };
 
 let current: Session | null = null;
@@ -44,7 +45,8 @@ export function startSession(
     screenshotPath,
     selectedLabel: action.label,
     turns: [{ role: "user", content: action.label }],
-    sessionId: randomUUID()
+    sessionId: randomUUID(),
+    claudeSessionCreated: false
   };
 
   return snapshot(true);
@@ -74,9 +76,11 @@ export async function fetchAssistantTurn(): Promise<ResultPayload> {
       screenshotPath: current.screenshotPath,
       selectedLabel: current.selectedLabel,
       turns: current.turns,
-      sessionId: current.sessionId
+      sessionId: current.sessionId,
+      isFirstTurn: !current.claudeSessionCreated
     });
 
+    current.claudeSessionCreated = true;
     current.turns.push({ role: "assistant", content: reply });
     return snapshot(false);
   } catch (error) {

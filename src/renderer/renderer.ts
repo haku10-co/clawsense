@@ -246,6 +246,15 @@ function initSuggestion(): void {
   });
   void window.clawSense.suggestionReady();
 
+  const topClose = document.getElementById("top-close");
+  if (topClose) {
+    topClose.addEventListener("click", () => void window.clawSense.dismiss());
+  }
+
+  document.querySelectorAll<HTMLButtonElement>('[data-action="settings"]').forEach((button) => {
+    button.addEventListener("click", () => void window.clawSense.openSettings());
+  });
+
   pickerButtons.forEach((button) => {
     button.addEventListener("click", () => {
       const fb = button.dataset.feedback as FeedbackValue | undefined;

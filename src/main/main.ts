@@ -323,6 +323,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("prompts:read", () => readAllPrompts());
   ipcMain.handle("prompts:save", (_e, bundle: PromptsBundle) => saveAllPrompts(bundle));
   ipcMain.handle("prompts:reset", () => resetPrompts());
+  ipcMain.handle("settings:open", () => showPromptsEditor());
 });
 
 app.on("will-quit", () => {

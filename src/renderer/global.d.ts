@@ -20,6 +20,7 @@ declare global {
       readPrompts(): Promise<PromptsBundle>;
       savePrompts(bundle: PromptsBundle): Promise<void>;
       resetPrompts(): Promise<PromptsBundle>;
+      openSettings(): Promise<void>;
     };
   }
 }

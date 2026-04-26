@@ -156,6 +156,7 @@ export type AskDirectionInput = {
   selectedLabel: string;
   turns: Turn[];
   sessionId: string;
+  isFirstTurn: boolean;
 };
 
 type ClaudeJsonResult = {
@@ -176,6 +177,17 @@ function parseJsonResult(raw: string): string {
 }
 
 async function buildDirectionPrompt(input: AskDirectionInput): Promise<string> {
+  if (!input.isFirstTurn) {
+    // Resuming: Claude already has the prior turns via --resume.
+    // Send only the latest user message.
+    for (let i = input.turns.length - 1; i >= 0; i--) {
+      if (input.turns[i].role === "user") {
+        return input.turns[i].content;
+      }
+    }
+    return "";
+  }
+
   const template = await readPrompt("direction");
   const transcript = input.turns
     .map((turn) =>
@@ -192,11 +204,13 @@ async function buildDirectionPrompt(input: AskDirectionInput): Promise<string> {
 
 export async function askDirection(input: AskDirectionInput): Promise<string> {
   const prompt = await buildDirectionPrompt(input);
+  const sessionFlag = input.isFirstTurn
+    ? ["--session-id", input.sessionId]
+    : ["--resume", input.sessionId];
   const args = [
     "-p",
     "--dangerously-skip-permissions",
-    "--session-id",
-    input.sessionId,
+    ...sessionFlag,
     "--output-format",
     "json",
     prompt

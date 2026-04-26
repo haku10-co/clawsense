@@ -20,11 +20,10 @@
           <button
             type="button"
             class="icon-button"
-            id="settings-button"
-            aria-label="設定"
-            disabled
+            id="top-close"
+            aria-label="閉じる"
           >
-            <span class="icon-gear" aria-hidden="true"></span>
+            <span class="btn-icon btn-icon-close" aria-hidden="true"></span>
           </button>
         </header>
 
@@ -60,9 +59,13 @@
                 <span class="btn-icon btn-icon-retry" aria-hidden="true"></span>
                 <span>再提案</span>
               </button>
-              <button type="button" class="ghost-button" data-feedback="dismissed">
-                <span class="btn-icon btn-icon-close" aria-hidden="true"></span>
-                <span>閉じる</span>
+              <button
+                type="button"
+                class="icon-button corner-icon-button"
+                data-action="settings"
+                aria-label="設定"
+              >
+                <span class="icon-gear" aria-hidden="true"></span>
               </button>
             </div>
           </footer>
@@ -100,11 +103,15 @@
                 <span class="btn-icon btn-icon-spark" aria-hidden="true"></span>
                 <span>別案をもらう</span>
               </button>
+              <button
+                type="button"
+                class="icon-button corner-icon-button"
+                data-action="settings"
+                aria-label="設定"
+              >
+                <span class="icon-gear" aria-hidden="true"></span>
+              </button>
             </div>
-            <button type="button" class="ghost-button-faint" data-result-action="dismiss">
-              <span class="btn-icon btn-icon-close" aria-hidden="true"></span>
-              <span>閉じる</span>
-            </button>
           </footer>
         </div>
       </section>

@@ -197,6 +197,22 @@ textarea {
   border: 1.5px solid currentColor;
 }
 
+.corner-icon-button {
+  width: 34px;
+  height: 34px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+.corner-icon-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
 /* Buttons (shared) */
 
 .ghost-button {
