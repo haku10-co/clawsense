@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ClawSense Suggestion</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <link rel="stylesheet" href="./picker.css" />
+    <link rel="stylesheet" href="./result.css" />
+    <script defer src="../../dist/renderer/renderer.js"></script>
+  </head>
+  <body data-view="suggestion" data-state="picker">
+    <main class="suggestion-shell" aria-live="polite">
+      <section class="suggestion-card" aria-label="ClawSense からの提案">
+        <header class="suggestion-topbar">
+          <div class="brand">
+            <span class="brand-mark" aria-hidden="true"></span>
+            <p class="brand-name">ClawSense</p>
+          </div>
+          <button
+            type="button"
+            class="icon-button"
+            id="settings-button"
+            aria-label="設定"
+            disabled
+          >
+            <span class="icon-gear" aria-hidden="true"></span>
+          </button>
+        </header>
+
+        <div class="state-picker" data-state-show="picker">
+          <section class="hero">
+            <div class="headline-row">
+              <h1 id="headline" class="headline">次の方向性を考えています…</h1>
+              <span class="headline-pulse" aria-hidden="true"></span>
+            </div>
+            <p id="hint" class="hint">Claude Code に提案を聞いています</p>
+          </section>
+
+          <ul id="actions" class="action-list" role="list">
+            <li class="action-skeleton" aria-hidden="true">
+              <span class="skeleton-line"></span>
+            </li>
+            <li class="action-skeleton" aria-hidden="true">
+              <span class="skeleton-line"></span>
+            </li>
+            <li class="action-skeleton" aria-hidden="true">
+              <span class="skeleton-line"></span>
+            </li>
+          </ul>
+
+          <footer class="suggestion-actions">
+            <p id="suggestion-status" class="status" role="status"></p>
+            <div class="button-row">
+              <button type="button" class="ghost-button" data-feedback="wrong">
+                <span class="btn-icon btn-icon-wrong" aria-hidden="true"></span>
+                <span>違う</span>
+              </button>
+              <button type="button" class="ghost-button" data-feedback="retry">
+                <span class="btn-icon btn-icon-retry" aria-hidden="true"></span>
+                <span>再提案</span>
+              </button>
+              <button type="button" class="ghost-button" data-feedback="dismissed">
+                <span class="btn-icon btn-icon-close" aria-hidden="true"></span>
+                <span>閉じる</span>
+              </button>
+            </div>
+          </footer>
+        </div>
+
+        <div class="state-result" data-state-show="result">
+          <div class="selected-chip" id="selected-chip">
+            <span class="chip-label">選択中</span>
+            <span class="chip-text" id="selected-label"></span>
+          </div>
+
+          <div class="thread" id="thread"></div>
+
+          <form class="thread-form" id="thread-form">
+            <textarea
+              id="thread-input"
+              rows="1"
+              maxlength="600"
+              placeholder="追加で聞きたいことを入力…"
+            ></textarea>
+            <button type="submit" class="thread-send" aria-label="送信">
+              <span class="send-icon" aria-hidden="true"></span>
+            </button>
+          </form>
+
+          <p id="result-status" class="status" role="status"></p>
+
+          <footer class="result-actions">
+            <div class="result-actions-row">
+              <button type="button" class="ghost-button" data-result-action="terminal">
+                <span class="btn-icon btn-icon-terminal" aria-hidden="true"></span>
+                <span>ターミナルで開く</span>
+              </button>
+              <button type="button" class="ghost-button" data-result-action="reroll">
+                <span class="btn-icon btn-icon-spark" aria-hidden="true"></span>
+                <span>別案をもらう</span>
+              </button>
+            </div>
+            <button type="button" class="ghost-button-faint" data-result-action="dismiss">
+              <span class="btn-icon btn-icon-close" aria-hidden="true"></span>
+              <span>閉じる</span>
+            </button>
+          </footer>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>
