@@ -181,20 +181,17 @@ textarea {
   opacity: 0.55;
 }
 
-.icon-gear {
-  position: relative;
+.lucide-icon {
   width: 14px;
   height: 14px;
-  border-radius: 50%;
-  border: 1.5px solid currentColor;
+  flex: 0 0 auto;
+  stroke-width: 2;
 }
 
-.icon-gear::before {
-  content: "";
-  position: absolute;
-  inset: 4px;
-  border-radius: 50%;
-  border: 1.5px solid currentColor;
+.icon-button .lucide-icon,
+.corner-icon-button .lucide-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .corner-icon-button {
@@ -291,34 +288,6 @@ textarea {
 .primary-button:disabled {
   cursor: default;
   opacity: 0.55;
-}
-
-.btn-icon {
-  position: relative;
-  width: 14px;
-  height: 14px;
-  display: inline-block;
-  flex: 0 0 auto;
-}
-
-.btn-icon-close::before,
-.btn-icon-close::after {
-  content: "";
-  position: absolute;
-  left: 1px;
-  top: 6px;
-  width: 12px;
-  height: 1.6px;
-  background: currentColor;
-  border-radius: 1px;
-}
-
-.btn-icon-close::before {
-  transform: rotate(45deg);
-}
-
-.btn-icon-close::after {
-  transform: rotate(-45deg);
 }
 
 /* Status */

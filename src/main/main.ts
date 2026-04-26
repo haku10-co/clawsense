@@ -186,13 +186,21 @@ function refreshTrayMenu(): void {
   tray?.setContextMenu(buildMenu());
 }
 
-async function handleSelectAction(triggerId: string, actionId: string): Promise<void> {
+async function handleSelectAction(
+  triggerId: string,
+  actionId: string,
+  customLabel?: string
+): Promise<void> {
   const action = lastSuggestion?.actions.find((entry) => entry.id === actionId);
   if (!lastSuggestion || lastSuggestion.triggerId !== triggerId || !action) {
     return;
   }
 
-  sendResult(startSession(triggerId, lastSuggestion.screenshotPath, action));
+  const trimmed = customLabel?.trim();
+  const effective =
+    trimmed && trimmed !== action.label ? { ...action, label: trimmed } : action;
+
+  sendResult(startSession(triggerId, lastSuggestion.screenshotPath, effective));
   const reply = await fetchAssistantTurn();
   sendResult(reply);
 }
@@ -228,17 +236,24 @@ app.whenReady().then(async () => {
 
   ipcMain.handle(
     "feedback:send",
-    async (_event, triggerId: string, feedback: FeedbackValue, actionId?: string) => {
+    async (
+      _event,
+      triggerId: string,
+      feedback: FeedbackValue,
+      actionId?: string,
+      customLabel?: string
+    ) => {
       await logEvent({
         type: "feedback",
         triggerId,
         feedback,
         actionId,
+        customLabel,
         createdAt: new Date().toISOString()
       });
 
       if (feedback === "select" && actionId) {
-        await handleSelectAction(triggerId, actionId);
+        await handleSelectAction(triggerId, actionId, customLabel);
         return;
       }
 

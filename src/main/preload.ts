@@ -22,8 +22,8 @@ contextBridge.exposeInMainWorld("clawSense", {
   retryWithNote(note: string) {
     return ipcRenderer.invoke("ask:retry-with-note", note);
   },
-  sendFeedback(triggerId: string, feedback: FeedbackValue, actionId?: string) {
-    return ipcRenderer.invoke("feedback:send", triggerId, feedback, actionId);
+  sendFeedback(triggerId: string, feedback: FeedbackValue, actionId?: string, customLabel?: string) {
+    return ipcRenderer.invoke("feedback:send", triggerId, feedback, actionId, customLabel);
   },
   continueChat(triggerId: string, message: string) {
     return ipcRenderer.invoke("result:continue", triggerId, message);

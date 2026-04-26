@@ -68,48 +68,18 @@ function renderPickerActions(
 
   if (pending) {
     for (let i = 0; i < 3; i++) {
-      const li = document.createElement("li");
-      li.className = "action-skeleton";
-      li.setAttribute("aria-hidden", "true");
-      const line = document.createElement("span");
-      line.className = "skeleton-line";
-      li.appendChild(line);
-      list.appendChild(li);
+      list.appendChild(buildPickerSkeleton());
     }
     return;
   }
 
   if (actions.length === 0) {
-    const empty = document.createElement("li");
-    empty.className = "empty-state";
-    empty.textContent = "提案を取得できませんでした。「再提案」をお試しください。";
-    list.appendChild(empty);
+    list.appendChild(buildPickerEmpty());
     return;
   }
 
   for (const action of actions) {
-    const item = document.createElement("li");
-    item.setAttribute("role", "listitem");
-
-    const button = document.createElement("button");
-    button.type = "button";
-    button.className = "action-card";
-    button.dataset.actionId = action.id;
-    button.dataset.kind = safeKind(action.kind);
-
-    const label = document.createElement("span");
-    label.className = "action-label";
-    label.textContent = action.label;
-
-    const arrow = document.createElement("span");
-    arrow.className = "action-arrow";
-    arrow.setAttribute("aria-hidden", "true");
-
-    button.append(label, arrow);
-    button.addEventListener("click", () => onSelect(action));
-
-    item.appendChild(button);
-    list.appendChild(item);
+    list.appendChild(buildActionCard({ ...action, kind: safeKind(action.kind) }, onSelect));
   }
 }
 
@@ -155,13 +125,10 @@ function setDisabled(
   elements.forEach((b) => (b.disabled = disabled));
 }
 
-function pickerActionButtons(list: HTMLUListElement): NodeListOf<HTMLButtonElement> {
-  return list.querySelectorAll<HTMLButtonElement>(".action-card");
-}
-
 function initSuggestion(): void {
   let suggestion: SuggestionPayload | null = null;
   let result: ResultPayload | null = null;
+  let lastTriggerId: string | null = null;
 
   const status = byId<HTMLElement>("suggestion-status");
   const resultStatus = byId<HTMLElement>("result-status");
@@ -181,13 +148,16 @@ function initSuggestion(): void {
     new ResizeObserver(() => requestResizeToContent()).observe(card);
   }
 
-  function sendPickerFeedback(feedback: FeedbackValue, actionId?: string): void {
+  function sendPickerFeedback(
+    feedback: FeedbackValue,
+    actionId?: string,
+    customLabel?: string
+  ): void {
     if (!suggestion) {
       void window.clawSense.dismiss();
       return;
     }
 
-    setDisabled(pickerActionButtons(list), true);
     setDisabled(pickerButtons, true);
     status.textContent =
       feedback === "retry"
@@ -197,11 +167,10 @@ function initSuggestion(): void {
           : "フィードバックを送信中…";
 
     window.clawSense
-      .sendFeedback(suggestion.triggerId, feedback, actionId)
+      .sendFeedback(suggestion.triggerId, feedback, actionId, customLabel)
       .catch((error: unknown) => {
         const msg = error instanceof Error ? error.message : "送信できませんでした。";
         status.textContent = msg;
-        setDisabled(pickerActionButtons(list), false);
         setDisabled(pickerButtons, false);
       });
   }
@@ -212,8 +181,17 @@ function initSuggestion(): void {
     document.body.dataset.pending = payload.pending ? "true" : "false";
     setText("headline", payload.headline || "提案");
     setText("hint", payload.hint || "");
+
+    if (lastTriggerId !== payload.triggerId) {
+      const noteInput = document.getElementById("picker-note-input") as HTMLInputElement | null;
+      if (noteInput) {
+        noteInput.value = "";
+      }
+      lastTriggerId = payload.triggerId;
+    }
+
     renderPickerActions(list, payload.actions, payload.pending, (action) =>
-      sendPickerFeedback("select", action.id)
+      sendPickerFeedback("select", action.id, action.label)
     );
     status.textContent = "";
     setDisabled(pickerButtons, false);
@@ -237,7 +215,6 @@ function initSuggestion(): void {
     }
   }
 
-  setDisabled(pickerActionButtons(list), true);
   setDisabled(pickerButtons, true);
   window.clawSense.onSuggestion(renderPicker);
   window.clawSense.onResult(renderResult);

@@ -167,33 +167,9 @@
   opacity: 0.45;
 }
 
-.send-icon {
-  position: relative;
+.thread-send .lucide-icon {
   width: 14px;
   height: 14px;
-}
-
-.send-icon::before {
-  content: "";
-  position: absolute;
-  left: 1px;
-  top: 5px;
-  width: 11px;
-  height: 1.6px;
-  background: currentColor;
-  border-radius: 1px;
-}
-
-.send-icon::after {
-  content: "";
-  position: absolute;
-  right: 1px;
-  top: 1px;
-  width: 7px;
-  height: 7px;
-  border-right: 1.6px solid currentColor;
-  border-top: 1.6px solid currentColor;
-  transform: rotate(45deg);
 }
 
 /* Result footer */
@@ -240,58 +216,3 @@
   opacity: 0.55;
 }
 
-/* Result button icons */
-
-.btn-icon-terminal {
-  border: 1.5px solid currentColor;
-  border-radius: 3px;
-}
-
-.btn-icon-terminal::before {
-  content: "";
-  position: absolute;
-  left: 2.5px;
-  top: 4px;
-  width: 4px;
-  height: 4px;
-  border-left: 1.4px solid currentColor;
-  border-bottom: 1.4px solid currentColor;
-  transform: rotate(-45deg);
-}
-
-.btn-icon-terminal::after {
-  content: "";
-  position: absolute;
-  left: 7px;
-  bottom: 3px;
-  width: 5px;
-  height: 1.4px;
-  background: currentColor;
-  border-radius: 1px;
-}
-
-.btn-icon-spark {
-  position: relative;
-}
-
-.btn-icon-spark::before {
-  content: "";
-  position: absolute;
-  left: 5px;
-  top: 0;
-  width: 1.6px;
-  height: 14px;
-  background: currentColor;
-  border-radius: 1px;
-}
-
-.btn-icon-spark::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 5px;
-  width: 14px;
-  height: 1.6px;
-  background: currentColor;
-  border-radius: 1px;
-}

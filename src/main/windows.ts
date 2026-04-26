@@ -47,6 +47,8 @@ export function createSuggestionWindow(opts: WindowOptions): BrowserWindow {
   });
 
   win.loadFile(rendererPath("suggestion.html"));
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  win.setAlwaysOnTop(true, "screen-saver");
   if (opts.onLoaded) {
     win.webContents.on("did-finish-load", opts.onLoaded);
   }
@@ -78,6 +80,8 @@ export function createNoteWindow(opts: { preloadPath: string; onClosed: () => vo
   });
 
   win.loadFile(rendererPath("note.html"));
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  win.setAlwaysOnTop(true, "screen-saver");
   win.on("closed", opts.onClosed);
 
   return win;
@@ -103,6 +107,7 @@ export function createPromptsWindow(opts: { preloadPath: string; onClosed: () =>
   });
 
   win.loadFile(rendererPath("prompts.html"));
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   win.on("closed", opts.onClosed);
 
   return win;

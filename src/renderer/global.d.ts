@@ -11,7 +11,12 @@ declare global {
       suggestionReady(): Promise<void>;
       onNoteFocus(callback: () => void): void;
       retryWithNote(note: string): Promise<void>;
-      sendFeedback(triggerId: string, feedback: FeedbackValue, actionId?: string): Promise<void>;
+      sendFeedback(
+        triggerId: string,
+        feedback: FeedbackValue,
+        actionId?: string,
+        customLabel?: string
+      ): Promise<void>;
       continueChat(triggerId: string, message: string): Promise<void>;
       rerollPicker(triggerId: string): Promise<void>;
       openInTerminal(triggerId: string): Promise<void>;
