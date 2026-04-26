@@ -19,8 +19,8 @@ contextBridge.exposeInMainWorld("clawSense", {
   onNoteFocus(callback: () => void) {
     ipcRenderer.on("note:focus", () => callback());
   },
-  submitNote(note: string) {
-    return ipcRenderer.invoke("note:submit", note);
+  retryWithNote(note: string) {
+    return ipcRenderer.invoke("ask:retry-with-note", note);
   },
   sendFeedback(triggerId: string, feedback: FeedbackValue, actionId?: string) {
     return ipcRenderer.invoke("feedback:send", triggerId, feedback, actionId);

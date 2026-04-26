@@ -10,7 +10,7 @@ declare global {
       onResultToast(callback: (message: string) => void): void;
       suggestionReady(): Promise<void>;
       onNoteFocus(callback: () => void): void;
-      submitNote(note: string): Promise<void>;
+      retryWithNote(note: string): Promise<void>;
       sendFeedback(triggerId: string, feedback: FeedbackValue, actionId?: string): Promise<void>;
       continueChat(triggerId: string, message: string): Promise<void>;
       rerollPicker(triggerId: string): Promise<void>;

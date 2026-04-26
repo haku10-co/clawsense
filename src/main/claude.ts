@@ -11,7 +11,7 @@ const VALID_KINDS: readonly ActionKind[] = ["terminal", "doc", "code", "search",
 export type AskClaudeInput = {
   triggerId: string;
   screenshotPath: string;
-  note?: string;
+  noteBlock: string;
 };
 
 export type AskClaudeResult = Pick<
@@ -122,11 +122,10 @@ function parseClaudeOutput(rawText: string): SuggestionAction[] {
 
 async function buildPrompt(input: AskClaudeInput): Promise<string> {
   const template = await readPrompt("picker");
-  const noteBlock = input.note ? `\nユーザーのメモ:\n${input.note}\n` : "";
   return render(template, {
     screenshotPath: input.screenshotPath,
     triggerId: input.triggerId,
-    noteBlock
+    noteBlock: input.noteBlock
   });
 }
 

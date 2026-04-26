@@ -255,6 +255,16 @@ function initSuggestion(): void {
     button.addEventListener("click", () => void window.clawSense.openSettings());
   });
 
+  const noteForm = document.getElementById("picker-note-form") as HTMLFormElement | null;
+  const noteInput = document.getElementById("picker-note-input") as HTMLInputElement | null;
+  if (noteForm && noteInput) {
+    noteForm.addEventListener("submit", (event) => {
+      event.preventDefault();
+      const value = noteInput.value.trim();
+      void window.clawSense.retryWithNote(value);
+    });
+  }
+
   pickerButtons.forEach((button) => {
     button.addEventListener("click", () => {
       const fb = button.dataset.feedback as FeedbackValue | undefined;

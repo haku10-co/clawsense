@@ -3,6 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { captureScreen } from "./capture";
 import { askClaude } from "./claude";
+import { gatherContext, renderNoteBlock } from "./context";
 import { logEvent } from "./logger";
 import {
   ensurePromptsExist,
@@ -22,7 +23,6 @@ import {
 import type { FeedbackValue, ResultPayload, SuggestionPayload, TriggerSource } from "./types";
 import {
   applyResize,
-  createNoteWindow,
   createPromptsWindow,
   createSuggestionWindow,
   createTrayIcon
@@ -30,7 +30,6 @@ import {
 
 let tray: Tray | null = null;
 let suggestionWindow: BrowserWindow | null = null;
-let noteWindow: BrowserWindow | null = null;
 let promptsWindow: BrowserWindow | null = null;
 let lastSuggestion: SuggestionPayload | null = null;
 let pendingSuggestion: SuggestionPayload | null = null;
@@ -56,21 +55,6 @@ function ensureSuggestionWindow(): BrowserWindow {
   });
 
   return suggestionWindow;
-}
-
-function ensureNoteWindow(): BrowserWindow {
-  if (noteWindow && !noteWindow.isDestroyed()) {
-    return noteWindow;
-  }
-
-  noteWindow = createNoteWindow({
-    preloadPath: preloadPath(),
-    onClosed: () => {
-      noteWindow = null;
-    }
-  });
-
-  return noteWindow;
 }
 
 function showPromptsEditor(): void {
@@ -115,18 +99,6 @@ function sendResult(payload: ResultPayload): void {
   suggestionWindow.webContents.send("result:update", payload);
 }
 
-function showNoteInput(): void {
-  const win = ensureNoteWindow();
-  win.webContents.once("did-finish-load", () => {
-    win.webContents.send("note:focus");
-  });
-  if (!win.webContents.isLoading()) {
-    win.webContents.send("note:focus");
-  }
-  win.show();
-  win.focus();
-}
-
 function showLoading(triggerId: string, screenshotPath: string): void {
   showSuggestion({
     triggerId,
@@ -140,23 +112,27 @@ function showLoading(triggerId: string, screenshotPath: string): void {
   });
 }
 
-async function runAsk(source: TriggerSource, note?: string): Promise<void> {
+async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
   const triggerId = randomUUID();
   const startedAt = Date.now();
 
   try {
     const screenshotPath = await captureScreen(triggerId);
     showLoading(triggerId, screenshotPath);
+
+    const context = await gatherContext({ userNote });
+    const noteBlock = renderNoteBlock(context);
+
     await logEvent({
       type: "trigger",
       id: triggerId,
       createdAt: new Date(startedAt).toISOString(),
       source,
       screenshotPath,
-      userNote: note
+      userNote: context.userNote
     });
 
-    const response = await askClaude({ triggerId, screenshotPath, note });
+    const response = await askClaude({ triggerId, screenshotPath, noteBlock });
     const payload: SuggestionPayload = {
       ...response,
       headline: response.actions.length > 0 ? "次にやることを選んでください" : "提案を生成できませんでした",
@@ -195,7 +171,6 @@ async function runAsk(source: TriggerSource, note?: string): Promise<void> {
 function buildMenu(): Menu {
   return Menu.buildFromTemplate([
     { label: "ClawSense に聞く", click: () => void runAsk("menu") },
-    { label: "メモを添えて聞く", click: () => showNoteInput() },
     {
       label: "直前の提案を開く",
       enabled: Boolean(lastSuggestion),
@@ -243,9 +218,8 @@ app.whenReady().then(async () => {
     void runAsk("hotkey");
   });
 
-  ipcMain.handle("note:submit", (_event, note: string) => {
-    noteWindow?.hide();
-    void runAsk("menu", note.trim() || undefined);
+  ipcMain.handle("ask:retry-with-note", (_event, note: string) => {
+    void runAsk("button", note.trim() || undefined);
   });
 
   ipcMain.handle("window:dismiss", (event) => {

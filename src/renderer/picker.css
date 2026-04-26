@@ -63,6 +63,46 @@
   overflow-wrap: anywhere;
 }
 
+/* Inline note input (auxiliary context) */
+
+.picker-note-form {
+  margin-top: 8px;
+}
+
+.picker-note-input {
+  width: 100%;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0 11px;
+  background: rgba(255, 255, 255, 0.55);
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.4;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.picker-note-input:hover {
+  background: rgba(255, 255, 255, 0.75);
+}
+
+.picker-note-input:focus {
+  outline: none;
+  border-color: var(--primary-soft-strong);
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.picker-note-input::placeholder {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.picker-note-input:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
 /* Action list */
 
 .action-list {

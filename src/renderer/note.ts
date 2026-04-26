@@ -42,7 +42,7 @@ function noteById<T extends HTMLElement>(id: string): T {
     status.textContent = "ClawSense に聞いています…";
 
     window.clawSense
-      .submitNote(input.value.trim())
+      .retryWithNote(input.value.trim())
       .then(() => {
         input.value = "";
         status.textContent = "";
