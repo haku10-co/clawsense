@@ -21,7 +21,6 @@ declare global {
       rerollPicker(triggerId: string): Promise<void>;
       openInTerminal(triggerId: string): Promise<void>;
       dismiss(): Promise<void>;
-      resizeSuggestion(height: number): Promise<void>;
       readPrompts(): Promise<PromptsBundle>;
       savePrompts(bundle: PromptsBundle): Promise<void>;
       resetPrompts(): Promise<PromptsBundle>;

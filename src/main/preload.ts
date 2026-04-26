@@ -37,9 +37,6 @@ contextBridge.exposeInMainWorld("clawSense", {
   dismiss() {
     return ipcRenderer.invoke("window:dismiss");
   },
-  resizeSuggestion(height: number) {
-    return ipcRenderer.invoke("suggestion:resize", height);
-  },
   readPrompts(): Promise<PromptsBundle> {
     return ipcRenderer.invoke("prompts:read");
   },

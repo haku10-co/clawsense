@@ -116,6 +116,16 @@ textarea {
   gap: 12px;
   min-width: 0;
   padding: 14px 16px 8px;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+.suggestion-topbar button,
+.suggestion-topbar .icon-button,
+.suggestion-topbar input,
+.suggestion-topbar .brand {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .note-header {
@@ -124,10 +134,18 @@ textarea {
   justify-content: space-between;
   gap: 12px;
   min-width: 0;
+  -webkit-app-region: drag;
+  app-region: drag;
 }
 
 .note-header > div:first-child {
   min-width: 0;
+}
+
+.note-header button,
+.note-header .icon-button {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
 }
 
 .brand {

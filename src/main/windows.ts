@@ -19,30 +19,41 @@ export function createTrayIcon(): Electron.NativeImage {
   );
 }
 
-type WindowOptions = {
+type SuggestionBounds = { x: number; y: number; width: number; height: number };
+
+type SuggestionWindowOptions = {
   preloadPath: string;
   onClosed: () => void;
   onLoaded?: () => void;
   onDomReady?: () => void;
+  initialBounds?: SuggestionBounds | null;
 };
 
-export function createSuggestionWindow(opts: WindowOptions): BrowserWindow {
+export function createSuggestionWindow(opts: SuggestionWindowOptions): BrowserWindow {
   const display = screen.getPrimaryDisplay();
-  const width = 420;
-  const height = 380;
   const margin = 24;
+  const fallback: SuggestionBounds = {
+    width: 420,
+    height: 380,
+    x: Math.round(display.workArea.x + display.workArea.width - 420 - margin),
+    y: Math.round(display.workArea.y + display.workArea.height - 380 - margin)
+  };
+  const bounds = opts.initialBounds ?? fallback;
 
   const win = new BrowserWindow({
-    width,
-    height,
-    x: Math.round(display.workArea.x + display.workArea.width - width - margin),
-    y: Math.round(display.workArea.y + display.workArea.height - height - margin),
+    width: bounds.width,
+    height: bounds.height,
+    minWidth: 360,
+    minHeight: 280,
+    x: bounds.x,
+    y: bounds.y,
     frame: false,
-    resizable: false,
+    resizable: true,
     alwaysOnTop: true,
     skipTaskbar: true,
     show: false,
     transparent: true,
+    hasShadow: true,
     webPreferences: { preload: opts.preloadPath }
   });
 

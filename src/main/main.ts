@@ -1,48 +1,50 @@
-import { app, BrowserWindow, Menu, Tray, globalShortcut, ipcMain, shell } from "electron";
+import { app, BrowserWindow, Menu, Tray, globalShortcut, shell } from "electron";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { clampToScreen, loadBounds, saveBounds } from "./bounds";
 import { captureScreen, SCREENSHOTS_DIR } from "./capture";
 import { askClaude } from "./claude";
 import { gatherContext, renderNoteBlock } from "./context";
+import { getById, listRecent, saveSession, type HistoricalSession } from "./history";
+import { registerIpcHandlers } from "./ipc";
 import { logEvent } from "./logger";
 import {
   getScreenAccessStatus,
   openScreenRecordingSettings,
   triggerScreenAccessPrompt
 } from "./permissions";
-import {
-  ensurePromptsExist,
-  readAllPrompts,
-  resetPrompts,
-  saveAllPrompts,
-  type PromptsBundle
-} from "./prompts";
-import {
-  appendUserTurn,
-  clearSession,
-  fetchAssistantTurn,
-  getSessionTriggerId,
-  openInTerminal,
-  startSession
-} from "./session";
-import type { FeedbackValue, ResultPayload, SuggestionPayload, TriggerSource } from "./types";
-import {
-  applyResize,
-  createPromptsWindow,
-  createSuggestionWindow,
-  createTrayIcon
-} from "./windows";
+import { ensurePromptsExist } from "./prompts";
+import { getSessionSnapshot, restoreSession } from "./session";
+import type { ResultPayload, SuggestionPayload, TriggerSource } from "./types";
+import { createPromptsWindow, createSuggestionWindow, createTrayIcon } from "./windows";
 
 let tray: Tray | null = null;
 let suggestionWindow: BrowserWindow | null = null;
 let promptsWindow: BrowserWindow | null = null;
 let lastSuggestion: SuggestionPayload | null = null;
 let pendingSuggestion: SuggestionPayload | null = null;
+let cachedBounds: { x: number; y: number; width: number; height: number } | null = null;
+let saveBoundsTimer: NodeJS.Timeout | null = null;
+let recentHistory: HistoricalSession[] = [];
 
 const HOTKEY = "CommandOrControl+Shift+Space";
 
 function preloadPath(): string {
   return path.join(__dirname, "preload.js");
+}
+
+function scheduleBoundsPersist(): void {
+  if (!suggestionWindow || suggestionWindow.isDestroyed()) {
+    return;
+  }
+  if (saveBoundsTimer) {
+    clearTimeout(saveBoundsTimer);
+  }
+  const bounds = suggestionWindow.getBounds();
+  saveBoundsTimer = setTimeout(() => {
+    void saveBounds(bounds);
+    cachedBounds = bounds;
+  }, 400);
 }
 
 function ensureSuggestionWindow(): BrowserWindow {
@@ -52,12 +54,16 @@ function ensureSuggestionWindow(): BrowserWindow {
 
   suggestionWindow = createSuggestionWindow({
     preloadPath: preloadPath(),
+    initialBounds: cachedBounds,
     onClosed: () => {
       suggestionWindow = null;
     },
     onLoaded: sendPendingSuggestion,
     onDomReady: sendPendingSuggestion
   });
+
+  suggestionWindow.on("moved", scheduleBoundsPersist);
+  suggestionWindow.on("resized", scheduleBoundsPersist);
 
   return suggestionWindow;
 }
@@ -88,11 +94,9 @@ function sendPendingSuggestion(): void {
   if (!suggestionWindow || suggestionWindow.isDestroyed() || !pendingSuggestion) {
     return;
   }
-
   if (suggestionWindow.webContents.isLoading()) {
     return;
   }
-
   suggestionWindow.webContents.send("suggestion:update", pendingSuggestion);
 }
 
@@ -100,7 +104,6 @@ function sendResult(payload: ResultPayload): void {
   if (!suggestionWindow || suggestionWindow.isDestroyed()) {
     return;
   }
-
   suggestionWindow.webContents.send("result:update", payload);
 }
 
@@ -166,8 +169,10 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
     const response = await askClaude({ triggerId, screenshotPath, noteBlock });
     const payload: SuggestionPayload = {
       ...response,
-      headline: response.actions.length > 0 ? "次にやることを選んでください" : "提案を生成できませんでした",
-      hint: response.actions.length > 0 ? "いちばん近いと思うアクションをクリック" : "「再提案」をお試しください",
+      headline:
+        response.actions.length > 0 ? "次にやることを選んでください" : "提案を生成できませんでした",
+      hint:
+        response.actions.length > 0 ? "いちばん近いと思うアクションをクリック" : "「再提案」をお試しください",
       latencyMs: Date.now() - startedAt,
       screenshotPath,
       pending: false
@@ -199,6 +204,39 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
   }
 }
 
+function truncate(value: string, max: number): string {
+  return value.length <= max ? value : `${value.slice(0, max - 1)}…`;
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  const m = (d.getMonth() + 1).toString().padStart(2, "0");
+  const day = d.getDate().toString().padStart(2, "0");
+  const hh = d.getHours().toString().padStart(2, "0");
+  const mm = d.getMinutes().toString().padStart(2, "0");
+  return `${m}/${day} ${hh}:${mm}`;
+}
+
+async function reopenHistorySession(triggerId: string): Promise<void> {
+  const stored = await getById(triggerId);
+  if (!stored) {
+    return;
+  }
+  const payload = restoreSession(stored);
+  ensureSuggestionWindow().showInactive();
+  sendResult(payload);
+}
+
+function buildHistorySubmenu(): Electron.MenuItemConstructorOptions[] {
+  if (recentHistory.length === 0) {
+    return [{ label: "履歴なし", enabled: false }];
+  }
+  return recentHistory.map((s) => ({
+    label: `${truncate(s.selectedLabel, 50)}  —  ${formatDate(s.updatedAt)}`,
+    click: () => void reopenHistorySession(s.triggerId)
+  }));
+}
+
 function buildMenu(): Menu {
   const lastScreenshot = lastSuggestion?.screenshotPath;
   return Menu.buildFromTemplate([
@@ -208,20 +246,15 @@ function buildMenu(): Menu {
       enabled: Boolean(lastSuggestion),
       click: () => lastSuggestion && showSuggestion(lastSuggestion)
     },
+    { label: "履歴", submenu: buildHistorySubmenu() },
     { type: "separator" },
     { label: "プロンプトを編集...", click: () => showPromptsEditor() },
     {
       label: "デバッグ",
       submenu: [
-        {
-          label: "画面収録の設定を開く",
-          click: () => openScreenRecordingSettings()
-        },
+        { label: "画面収録の設定を開く", click: () => openScreenRecordingSettings() },
         { type: "separator" },
-        {
-          label: "スクショフォルダを開く",
-          click: () => void shell.openPath(SCREENSHOTS_DIR)
-        },
+        { label: "スクショフォルダを開く", click: () => void shell.openPath(SCREENSHOTS_DIR) },
         {
           label: "直前のスクショを開く",
           enabled: Boolean(lastScreenshot),
@@ -237,23 +270,14 @@ function refreshTrayMenu(): void {
   tray?.setContextMenu(buildMenu());
 }
 
-async function handleSelectAction(
-  triggerId: string,
-  actionId: string,
-  customLabel?: string
-): Promise<void> {
-  const action = lastSuggestion?.actions.find((entry) => entry.id === actionId);
-  if (!lastSuggestion || lastSuggestion.triggerId !== triggerId || !action) {
+async function persistCurrentSession(): Promise<void> {
+  const snap = getSessionSnapshot();
+  if (!snap) {
     return;
   }
-
-  const trimmed = customLabel?.trim();
-  const effective =
-    trimmed && trimmed !== action.label ? { ...action, label: trimmed } : action;
-
-  sendResult(startSession(triggerId, lastSuggestion.screenshotPath, effective));
-  const reply = await fetchAssistantTurn();
-  sendResult(reply);
+  await saveSession(snap);
+  recentHistory = await listRecent(10);
+  refreshTrayMenu();
 }
 
 app.whenReady().then(async () => {
@@ -261,6 +285,11 @@ app.whenReady().then(async () => {
   await ensurePromptsExist().catch(() => {
     /* prompts dir creation failure should not block app startup */
   });
+
+  const stored = await loadBounds();
+  cachedBounds = stored ? clampToScreen(stored) : null;
+
+  recentHistory = await listRecent(10);
 
   tray = new Tray(createTrayIcon());
   tray.setToolTip("ClawSense");
@@ -277,93 +306,18 @@ app.whenReady().then(async () => {
     void runAsk("hotkey");
   });
 
-  ipcMain.handle("ask:retry-with-note", (_event, note: string) => {
-    void runAsk("button", note.trim() || undefined);
-  });
-
-  ipcMain.handle("window:dismiss", (event) => {
-    BrowserWindow.fromWebContents(event.sender)?.hide();
-  });
-
-  ipcMain.handle(
-    "feedback:send",
-    async (
-      _event,
-      triggerId: string,
-      feedback: FeedbackValue,
-      actionId?: string,
-      customLabel?: string
-    ) => {
-      await logEvent({
-        type: "feedback",
-        triggerId,
-        feedback,
-        actionId,
-        customLabel,
-        createdAt: new Date().toISOString()
-      });
-
-      if (feedback === "select" && actionId) {
-        await handleSelectAction(triggerId, actionId, customLabel);
-        return;
-      }
-
-      if (feedback === "retry") {
-        clearSession();
-        if (lastSuggestion?.triggerId === triggerId) {
-          void runAsk("button");
-        }
-        return;
-      }
-
-      clearSession();
-      suggestionWindow?.hide();
+  registerIpcHandlers({
+    getSuggestionWindow: () => suggestionWindow,
+    getLastSuggestion: () => lastSuggestion,
+    sendResult,
+    sendPendingSuggestion,
+    hideSuggestionWindow: () => suggestionWindow?.hide(),
+    runAsk,
+    showPromptsEditor,
+    onSessionUpdated: () => {
+      void persistCurrentSession();
     }
-  );
-
-  ipcMain.handle("result:continue", async (_event, triggerId: string, message: string) => {
-    if (getSessionTriggerId() !== triggerId) {
-      return;
-    }
-
-    sendResult(appendUserTurn(message));
-    const reply = await fetchAssistantTurn();
-    sendResult(reply);
   });
-
-  ipcMain.handle("result:reroll", async () => {
-    clearSession();
-    await runAsk("button");
-  });
-
-  ipcMain.handle("result:open-terminal", async (_event, triggerId: string) => {
-    if (getSessionTriggerId() !== triggerId) {
-      return;
-    }
-
-    const outcome = await openInTerminal();
-
-    if (outcome?.fallback) {
-      suggestionWindow?.webContents.send(
-        "result:toast",
-        "コマンドをコピーしました — ターミナルに貼り付けてください"
-      );
-      return;
-    }
-
-    suggestionWindow?.hide();
-    clearSession();
-  });
-
-  ipcMain.handle("suggestion:ready", () => sendPendingSuggestion());
-  ipcMain.handle("suggestion:resize", (_e, h: number) =>
-    suggestionWindow && applyResize(suggestionWindow, h)
-  );
-
-  ipcMain.handle("prompts:read", () => readAllPrompts());
-  ipcMain.handle("prompts:save", (_e, bundle: PromptsBundle) => saveAllPrompts(bundle));
-  ipcMain.handle("prompts:reset", () => resetPrompts());
-  ipcMain.handle("settings:open", () => showPromptsEditor());
 });
 
 app.on("will-quit", () => {

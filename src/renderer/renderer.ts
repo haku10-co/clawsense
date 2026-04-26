@@ -26,7 +26,6 @@ type ResultPayload = {
 };
 
 const view = document.body.dataset.view as ViewName | undefined;
-const WINDOW_PADDING = 20;
 const VALID_KINDS: readonly ActionKind[] = ["terminal", "doc", "code", "search", "general"];
 
 function byId<T extends HTMLElement>(id: string): T {
@@ -47,15 +46,6 @@ function safeKind(kind: string): ActionKind {
 
 function setState(state: ViewState): void {
   document.body.dataset.state = state;
-}
-
-function requestResizeToContent(): void {
-  const card = document.querySelector<HTMLElement>(".suggestion-card");
-  if (!card) {
-    return;
-  }
-  const desired = Math.ceil(card.getBoundingClientRect().height) + WINDOW_PADDING;
-  void window.clawSense.resizeSuggestion(desired);
 }
 
 function renderPickerActions(
@@ -142,11 +132,6 @@ function initSuggestion(): void {
   const threadForm = byId<HTMLFormElement>("thread-form");
   const threadInput = byId<HTMLTextAreaElement>("thread-input");
   const threadSend = threadForm.querySelector<HTMLButtonElement>(".thread-send");
-
-  const card = document.querySelector<HTMLElement>(".suggestion-card");
-  if (card) {
-    new ResizeObserver(() => requestResizeToContent()).observe(card);
-  }
 
   function sendPickerFeedback(
     feedback: FeedbackValue,

@@ -114,7 +114,7 @@ function buildActionCard(
       return;
     }
     const target = event.target as Node | null;
-    if (target && (editBtn.contains(target) || label.contains(target))) {
+    if (target && editBtn.contains(target)) {
       return;
     }
     select();

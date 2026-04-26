@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { askDirection } from "./claude";
+import type { HistoricalSession } from "./history";
 import { openInPreferredTerminal } from "./terminal";
 import type { ResultPayload, SuggestionAction, Turn } from "./types";
 
@@ -10,6 +11,7 @@ type Session = {
   turns: Turn[];
   sessionId: string;
   claudeSessionCreated: boolean;
+  createdAt: string;
 };
 
 let current: Session | null = null;
@@ -46,7 +48,8 @@ export function startSession(
     selectedLabel: action.label,
     turns: [{ role: "user", content: action.label }],
     sessionId: randomUUID(),
-    claudeSessionCreated: false
+    claudeSessionCreated: false,
+    createdAt: new Date().toISOString()
   };
 
   return snapshot(true);
@@ -104,4 +107,32 @@ export async function openInTerminal(): Promise<{ fallback: boolean } | null> {
 
 export function getSessionId(): string | null {
   return current?.sessionId ?? null;
+}
+
+export function getSessionSnapshot(): HistoricalSession | null {
+  if (!current) {
+    return null;
+  }
+  return {
+    triggerId: current.triggerId,
+    sessionId: current.sessionId,
+    screenshotPath: current.screenshotPath,
+    selectedLabel: current.selectedLabel,
+    turns: current.turns.map((turn) => ({ ...turn })),
+    createdAt: current.createdAt,
+    updatedAt: new Date().toISOString()
+  };
+}
+
+export function restoreSession(historical: HistoricalSession): ResultPayload {
+  current = {
+    triggerId: historical.triggerId,
+    screenshotPath: historical.screenshotPath,
+    selectedLabel: historical.selectedLabel,
+    turns: historical.turns.map((turn) => ({ ...turn })),
+    sessionId: historical.sessionId,
+    claudeSessionCreated: true,
+    createdAt: historical.createdAt
+  };
+  return snapshot(false);
 }
