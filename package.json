@@ -7,11 +7,43 @@
   "scripts": {
     "build": "tsc",
     "start": "npm run build && electron .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "pack": "npm run build && electron-builder --mac --dir",
+    "dist": "npm run build && electron-builder --mac"
+  },
+  "build": {
+    "appId": "com.clawsense.app",
+    "productName": "ClawSense",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "src/renderer/*.html",
+      "src/renderer/*.css",
+      "package.json",
+      "!**/*.map",
+      "!**/*.ts"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "extendInfo": {
+        "LSUIElement": true,
+        "NSScreenCaptureUsageDescription": "ClawSense は作業中の画面を Claude Code に渡して、次の方向性を提案するために画面収録を使用します。"
+      }
+    },
+    "dmg": {
+      "writeUpdateInfo": false
+    }
   },
   "devDependencies": {
     "@types/node": "^22.15.0",
     "electron": "^36.0.0",
+    "electron-builder": "^26.8.1",
     "typescript": "^5.8.0"
   }
 }
