@@ -184,10 +184,10 @@ export async function askClaude(input: AskClaudeInput): Promise<AskClaudeResult>
   const prompt = await buildPrompt(input);
   const args = [
     "-p",
+    prompt,
     "--dangerously-skip-permissions",
     "--allowed-tools",
-    "Read",
-    prompt
+    "Read"
   ];
 
   const { stdout, stderr } = await runClaude(args, 120_000);
