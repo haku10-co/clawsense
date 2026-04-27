@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { findClaudeBinary } from "./claude-binary";
 
 export type McpStatus = "connected" | "needs-auth" | "failed";
 
@@ -12,13 +13,17 @@ const LIST_TIMEOUT_MS = 8_000;
 
 let cache: { servers: McpServer[]; ts: number } | null = null;
 
-function runMcpList(timeoutMs: number): Promise<string> {
+async function runMcpList(timeoutMs: number): Promise<string> {
+  const binary = await findClaudeBinary();
+  if (!binary) {
+    throw new Error("claude CLI not found");
+  }
   return new Promise((resolve, reject) => {
     let stdout = "";
     let stderr = "";
     let settled = false;
 
-    const proc = spawn("claude", ["mcp", "list"], {
+    const proc = spawn(binary, ["mcp", "list"], {
       stdio: ["ignore", "pipe", "pipe"]
     });
 

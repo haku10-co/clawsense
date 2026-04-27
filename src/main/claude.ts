@@ -1,20 +1,22 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { getClaudeBinaryOrThrow } from "./claude-binary";
 import { readPrompt, render } from "./prompts";
 import type { ActionKind, SuggestionAction, SuggestionPayload, Turn } from "./types";
 
 const VALID_KINDS: readonly ActionKind[] = ["terminal", "doc", "code", "search", "general"];
 
-function runClaude(
+async function runClaude(
   args: string[],
   timeoutMs: number
 ): Promise<{ stdout: string; stderr: string }> {
+  const binary = await getClaudeBinaryOrThrow();
   return new Promise((resolve, reject) => {
     let stdout = "";
     let stderr = "";
     let settled = false;
 
-    const proc = spawn("claude", args, {
+    const proc = spawn(binary, args, {
       stdio: ["ignore", "pipe", "pipe"]
     });
 
