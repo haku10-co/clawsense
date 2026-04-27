@@ -1,12 +1,61 @@
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { promisify } from "node:util";
 import { readPrompt, render } from "./prompts";
 import type { ActionKind, SuggestionAction, SuggestionPayload, Turn } from "./types";
 
-const execFileAsync = promisify(execFile);
-
 const VALID_KINDS: readonly ActionKind[] = ["terminal", "doc", "code", "search", "general"];
+
+function runClaude(
+  args: string[],
+  timeoutMs: number
+): Promise<{ stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+
+    const proc = spawn("claude", args, {
+      stdio: ["ignore", "pipe", "pipe"]
+    });
+
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        proc.kill("SIGKILL");
+        reject(new Error(`claude timed out after ${timeoutMs}ms`));
+      }
+    }, timeoutMs);
+
+    proc.stdout.setEncoding("utf8");
+    proc.stderr.setEncoding("utf8");
+    proc.stdout.on("data", (chunk: string) => {
+      stdout += chunk;
+    });
+    proc.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    proc.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(error);
+    });
+    proc.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (code === 0) {
+        resolve({ stdout, stderr });
+      } else {
+        reject(
+          new Error(
+            `claude exited with code ${code}\n${(stderr || stdout).slice(0, 500)}`
+          )
+        );
+      }
+    });
+  });
+}
 
 export type AskClaudeInput = {
   triggerId: string;
@@ -131,12 +180,15 @@ async function buildPrompt(input: AskClaudeInput): Promise<string> {
 
 export async function askClaude(input: AskClaudeInput): Promise<AskClaudeResult> {
   const prompt = await buildPrompt(input);
-  const args = ["-p", "--dangerously-skip-permissions", prompt];
+  const args = [
+    "-p",
+    "--dangerously-skip-permissions",
+    "--allowed-tools",
+    "Read",
+    prompt
+  ];
 
-  const { stdout, stderr } = await execFileAsync("claude", args, {
-    timeout: 120_000,
-    maxBuffer: 10 * 1024 * 1024
-  });
+  const { stdout, stderr } = await runClaude(args, 120_000);
 
   const rawText = stdout.trim() || stderr.trim();
   if (!rawText) {
@@ -215,10 +267,7 @@ export async function askDirection(input: AskDirectionInput): Promise<string> {
     prompt
   ];
 
-  const { stdout, stderr } = await execFileAsync("claude", args, {
-    timeout: 120_000,
-    maxBuffer: 10 * 1024 * 1024
-  });
+  const { stdout, stderr } = await runClaude(args, 120_000);
 
   const raw = stdout.trim() || stderr.trim();
   if (!raw) {

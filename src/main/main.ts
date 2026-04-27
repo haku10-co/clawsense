@@ -151,10 +151,13 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
   }
 
   try {
-    const screenshotPath = await captureScreen(triggerId);
+    const screenshotPromise = captureScreen(triggerId);
+    const contextPromise = gatherContext({ userNote });
+
+    const screenshotPath = await screenshotPromise;
     showLoading(triggerId, screenshotPath);
 
-    const context = await gatherContext({ userNote });
+    const context = await contextPromise;
     const noteBlock = renderNoteBlock(context);
 
     await logEvent({
