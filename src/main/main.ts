@@ -3,7 +3,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { clampToScreen, loadBounds, saveBounds } from "./bounds";
 import { captureScreen, SCREENSHOTS_DIR } from "./capture";
-import { askClaude } from "./claude";
+import { askClaude, ClaudeAbortError } from "./claude";
 import { gatherContext, renderNoteBlock } from "./context";
 import { getById, listRecent, saveSession, type HistoricalSession } from "./history";
 import { registerIpcHandlers } from "./ipc";
@@ -26,6 +26,7 @@ let pendingSuggestion: SuggestionPayload | null = null;
 let cachedBounds: { x: number; y: number; width: number; height: number } | null = null;
 let saveBoundsTimer: NodeJS.Timeout | null = null;
 let recentHistory: HistoricalSession[] = [];
+let currentAskController: AbortController | null = null;
 
 const HOTKEY = "CommandOrControl+Shift+Space";
 
@@ -107,22 +108,26 @@ function sendResult(payload: ResultPayload): void {
   suggestionWindow.webContents.send("result:update", payload);
 }
 
-function showLoading(triggerId: string, screenshotPath: string): void {
-  showSuggestion({
-    triggerId,
-    headline: "次の方向性を考えています…",
-    hint: "Claude Code に提案を聞いています",
-    actions: [],
-    rawText: "",
-    latencyMs: 0,
-    screenshotPath,
-    pending: true
-  });
+function setTrayThinking(thinking: boolean): void {
+  if (!tray || process.platform !== "darwin") {
+    return;
+  }
+  tray.setTitle(thinking ? "CS·" : "CS");
 }
 
 async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
+  if (currentAskController) {
+    currentAskController.abort();
+  }
+  const ctrl = new AbortController();
+  currentAskController = ctrl;
+
   const triggerId = randomUUID();
   const startedAt = Date.now();
+
+  // 考えてる間はウィンドウを隠してトレイだけで通知。
+  suggestionWindow?.hide();
+  setTrayThinking(true);
 
   const accessStatus = getScreenAccessStatus();
   if (accessStatus !== "granted") {
@@ -155,7 +160,9 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
     const contextPromise = gatherContext({ userNote });
 
     const screenshotPath = await screenshotPromise;
-    showLoading(triggerId, screenshotPath);
+    if (ctrl.signal.aborted) {
+      return;
+    }
 
     const context = await contextPromise;
     const noteBlock = renderNoteBlock(context);
@@ -169,7 +176,15 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
       userNote: context.userNote
     });
 
-    const response = await askClaude({ triggerId, screenshotPath, noteBlock });
+    if (ctrl.signal.aborted) {
+      return;
+    }
+    const response = await askClaude({
+      triggerId,
+      screenshotPath,
+      noteBlock,
+      signal: ctrl.signal
+    });
     const payload: SuggestionPayload = {
       ...response,
       headline:
@@ -192,6 +207,10 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
 
     showSuggestion(payload);
   } catch (error) {
+    if (error instanceof ClaudeAbortError || ctrl.signal.aborted) {
+      // 新しいリクエストに置き換えられた。何も表示しない。
+      return;
+    }
     const message = error instanceof Error ? error.message : String(error);
     showSuggestion({
       triggerId,
@@ -204,6 +223,11 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
       pending: false
     });
     await logEvent({ type: "error", triggerId, message, createdAt: new Date().toISOString() });
+  } finally {
+    if (currentAskController === ctrl) {
+      currentAskController = null;
+      setTrayThinking(false);
+    }
   }
 }
 

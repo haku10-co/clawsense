@@ -33,7 +33,8 @@
       ],
       "extendInfo": {
         "LSUIElement": true,
-        "NSScreenCaptureUsageDescription": "ClawSense は作業中の画面を Claude Code に渡して、次の方向性を提案するために画面収録を使用します。"
+        "NSScreenCaptureUsageDescription": "ClawSense は作業中の画面を Claude Code に渡して、次の方向性を提案するために画面収録を使用します。",
+        "NSAppleEventsUsageDescription": "ClawSense は現在アクティブなアプリ名を取得するために、System Events への AppleScript 送信を使用します。"
       }
     },
     "dmg": {

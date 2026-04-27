@@ -6,11 +6,23 @@ import type { ActionKind, SuggestionAction, SuggestionPayload, Turn } from "./ty
 
 const VALID_KINDS: readonly ActionKind[] = ["terminal", "doc", "code", "search", "general"];
 
+export class ClaudeAbortError extends Error {
+  constructor() {
+    super("aborted");
+    this.name = "ClaudeAbortError";
+  }
+}
+
 async function runClaude(
   args: string[],
-  timeoutMs: number
+  timeoutMs: number,
+  signal?: AbortSignal
 ): Promise<{ stdout: string; stderr: string }> {
   const binary = await getClaudeBinaryOrThrow();
+  if (signal?.aborted) {
+    throw new ClaudeAbortError();
+  }
+
   return new Promise((resolve, reject) => {
     let stdout = "";
     let stderr = "";
@@ -20,11 +32,23 @@ async function runClaude(
       stdio: ["ignore", "pipe", "pipe"]
     });
 
+    const onAbort = (): void => {
+      if (settled) return;
+      settled = true;
+      proc.kill("SIGKILL");
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reject(new ClaudeAbortError());
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+
     const timer = setTimeout(() => {
       if (!settled) {
         settled = true;
         proc.kill("SIGKILL");
-        reject(new Error(`claude timed out after ${timeoutMs}ms`));
+        signal?.removeEventListener("abort", onAbort);
+        const seconds = Math.round(timeoutMs / 1000);
+        reject(new Error(`Claude の応答が ${seconds} 秒以内に返ってきませんでした。`));
       }
     }, timeoutMs);
 
@@ -40,12 +64,14 @@ async function runClaude(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       reject(error);
     });
     proc.on("close", (code) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       if (code === 0) {
         resolve({ stdout, stderr });
       } else {
@@ -63,6 +89,7 @@ export type AskClaudeInput = {
   triggerId: string;
   screenshotPath: string;
   noteBlock: string;
+  signal?: AbortSignal;
 };
 
 export type AskClaudeResult = Pick<
@@ -190,7 +217,7 @@ export async function askClaude(input: AskClaudeInput): Promise<AskClaudeResult>
     "Read"
   ];
 
-  const { stdout, stderr } = await runClaude(args, 120_000);
+  const { stdout, stderr } = await runClaude(args, 180_000, input.signal);
 
   const rawText = stdout.trim() || stderr.trim();
   if (!rawText) {
@@ -269,7 +296,7 @@ export async function askDirection(input: AskDirectionInput): Promise<string> {
     prompt
   ];
 
-  const { stdout, stderr } = await runClaude(args, 120_000);
+  const { stdout, stderr } = await runClaude(args, 360_000);
 
   const raw = stdout.trim() || stderr.trim();
   if (!raw) {

@@ -1,14 +1,16 @@
 import { listConnectedMcpServers, type McpServer } from "./mcp";
+import { getActiveApp, type ActiveApp } from "./sensors/active-app";
 
 export type ContextBundle = {
   userNote?: string;
+  activeApp?: ActiveApp;
   mcpServers?: McpServer[];
   // TODO: 自動収集ソース。今はスタブ。
-  // recentCommands?: string[];   // ~/.zsh_history 末尾 n 行など
-  // activeApp?: string;           // osascript で frontmost process
-  // recentFiles?: string[];       // Finder / VS Code の最近のファイル
+  // appTransitions?: string[];   // 直近5分のアプリ遷移
+  // windowTitle?: string;         // frontmost ウィンドウタイトル
+  // browserUrl?: string;          // frontmost ブラウザのURL
+  // recentCommands?: string[];    // ~/.zsh_history 末尾 n 行など
   // clipboardSnippet?: string;    // 直近のクリップボード（許可制）
-  // browserTabs?: string[];       // Safari/Chrome のアクティブタブ
 };
 
 export type GatherContextInput = {
@@ -16,12 +18,14 @@ export type GatherContextInput = {
 };
 
 export async function gatherContext(input: GatherContextInput): Promise<ContextBundle> {
-  const [mcpServers] = await Promise.all([
+  const [activeApp, mcpServers] = await Promise.all([
+    getActiveApp().catch(() => null),
     listConnectedMcpServers().catch(() => [] as McpServer[])
   ]);
 
   return {
     userNote: input.userNote?.trim() || undefined,
+    activeApp: activeApp ?? undefined,
     mcpServers: mcpServers.length > 0 ? mcpServers : undefined
   };
 }
@@ -49,6 +53,10 @@ function renderMcpSection(servers: McpServer[]): string {
 export function renderNoteBlock(bundle: ContextBundle): string {
   const sections: string[] = [];
 
+  if (bundle.activeApp) {
+    sections.push(`アクティブなアプリ: ${bundle.activeApp.name}`);
+  }
+
   if (bundle.userNote) {
     sections.push(`ユーザーのメモ:\n${bundle.userNote}`);
   }
@@ -56,10 +64,6 @@ export function renderNoteBlock(bundle: ContextBundle): string {
   if (bundle.mcpServers && bundle.mcpServers.length > 0) {
     sections.push(renderMcpSection(bundle.mcpServers));
   }
-
-  // TODO: 他ソースが揃ったら以下のように追記
-  // if (bundle.activeApp) sections.push(`アクティブなアプリ: ${bundle.activeApp}`);
-  // if (bundle.recentCommands?.length) sections.push(`直近のコマンド:\n${bundle.recentCommands.join("\n")}`);
 
   if (sections.length === 0) {
     return "";
