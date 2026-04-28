@@ -48,5 +48,8 @@ contextBridge.exposeInMainWorld("clawSense", {
   },
   openSettings(): Promise<void> {
     return ipcRenderer.invoke("settings:open");
+  },
+  faceSample(sample: { score: number; faceVisible: boolean }): Promise<void> {
+    return ipcRenderer.invoke("face:sample", sample);
   }
 });

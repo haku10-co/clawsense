@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Menu, Tray, globalShortcut, shell } from "electron";
+import { app, BrowserWindow, ipcMain, Menu, Tray, globalShortcut, shell } from "electron";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { clampToScreen, loadBounds, saveBounds } from "./bounds";
@@ -14,6 +14,11 @@ import {
   triggerScreenAccessPrompt
 } from "./permissions";
 import { ensurePromptsExist } from "./prompts";
+import {
+  recordFaceSample,
+  startFaceWatcher,
+  type FaceSample
+} from "./sensors/face-watcher";
 import { getSessionSnapshot, restoreSession } from "./session";
 import type { ResultPayload, SuggestionPayload, TriggerSource } from "./types";
 import { createPromptsWindow, createSuggestionWindow, createTrayIcon } from "./windows";
@@ -345,6 +350,12 @@ app.whenReady().then(async () => {
       void persistCurrentSession();
     }
   });
+
+  ipcMain.handle("face:sample", (_event, sample: FaceSample) => {
+    recordFaceSample(sample);
+  });
+
+  startFaceWatcher({ preloadPath: preloadPath() });
 });
 
 app.on("will-quit", () => {

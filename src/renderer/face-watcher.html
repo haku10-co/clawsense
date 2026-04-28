@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>ClawSense Face Watcher</title>
+    <style>
+      html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
+      video, canvas { display: none; }
+    </style>
+  </head>
+  <body data-view="face-watcher">
+    <video id="video" autoplay muted playsinline></video>
+    <script type="module">
+      /*
+        Face watcher — runs in a hidden BrowserWindow.
+        - Pulls camera frames via getUserMedia (default device; user can later
+          pick a specific source — Continuity Camera / external webcam /
+          virtual capture from another Mac all show up here).
+        - Computes a "struggle score" from MediaPipe FaceLandmarker
+          blendshapes (browDown, mouthFrown, eyeSquint, browInnerUp).
+        - Logs the score and forwards it to the main process via IPC.
+        - Frames never leave the renderer; only a single number per second
+          flows over IPC.
+      */
+
+      import {
+        FaceLandmarker,
+        FilesetResolver
+      } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.20/vision_bundle.mjs";
+
+      const TARGET_FPS = 5;
+      const LOG_INTERVAL_MS = 1000;
+      const REPORT_INTERVAL_MS = 500;
+
+      let faceLandmarker = null;
+      let videoEl = null;
+      let lastLogAt = 0;
+      let lastReportAt = 0;
+
+      function getBlend(categories, name) {
+        const found = categories.find((c) => c.categoryName === name);
+        return found ? found.score : 0;
+      }
+
+      function struggleScore(categories) {
+        const browDown =
+          (getBlend(categories, "browDownLeft") +
+            getBlend(categories, "browDownRight")) /
+          2;
+        const browInnerUp = getBlend(categories, "browInnerUp");
+        const mouthFrown =
+          (getBlend(categories, "mouthFrownLeft") +
+            getBlend(categories, "mouthFrownRight")) /
+          2;
+        const eyeSquint =
+          (getBlend(categories, "eyeSquintLeft") +
+            getBlend(categories, "eyeSquintRight")) /
+          2;
+        return (
+          Math.max(browDown, mouthFrown, eyeSquint * 0.9) + browInnerUp * 0.5
+        );
+      }
+
+      function reportFace(score, faceVisible) {
+        const now = Date.now();
+        if (now - lastLogAt > LOG_INTERVAL_MS) {
+          lastLogAt = now;
+          console.log(
+            `[face] visible=${faceVisible} struggle=${score.toFixed(3)}`
+          );
+        }
+        if (now - lastReportAt > REPORT_INTERVAL_MS) {
+          lastReportAt = now;
+          if (window.clawSense && window.clawSense.faceSample) {
+            window.clawSense.faceSample({ score, faceVisible }).catch(() => {});
+          }
+        }
+      }
+
+      async function loadFaceLandmarker() {
+        const fileset = await FilesetResolver.forVisionTasks(
+          "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.20/wasm"
+        );
+        return FaceLandmarker.createFromOptions(fileset, {
+          baseOptions: {
+            modelAssetPath:
+              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+            delegate: "GPU"
+          },
+          outputFaceBlendshapes: true,
+          runningMode: "VIDEO",
+          numFaces: 1
+        });
+      }
+
+      async function logDevices() {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          const videoInputs = devices.filter((d) => d.kind === "videoinput");
+          console.log(`[face] video inputs available: ${videoInputs.length}`);
+          videoInputs.forEach((d, i) => {
+            const label = d.label && d.label.length > 0 ? d.label : "(label hidden until permission)";
+            console.log(`[face] device[${i}]: ${label}`);
+          });
+          return videoInputs;
+        } catch (err) {
+          console.warn("[face] enumerateDevices failed:", err);
+          return [];
+        }
+      }
+
+      async function startCamera() {
+        await logDevices();
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false
+        });
+        videoEl.srcObject = stream;
+        await videoEl.play();
+        const settings = stream.getVideoTracks()[0]?.getSettings?.() ?? {};
+        console.log(
+          `[face] camera ready: ${settings.width || "?"}x${settings.height || "?"} ` +
+            `device=${settings.deviceId ? settings.deviceId.slice(0, 8) : "?"}`
+        );
+        await logDevices();
+        return stream;
+      }
+
+      async function init() {
+        videoEl = document.getElementById("video");
+
+        try {
+          faceLandmarker = await loadFaceLandmarker();
+          console.log("[face] FaceLandmarker loaded");
+        } catch (err) {
+          console.error("[face] FaceLandmarker load failed:", err);
+          return;
+        }
+
+        try {
+          await startCamera();
+          console.log("[face] camera ready");
+        } catch (err) {
+          const name = err && err.name ? err.name : "Unknown";
+          const msg = err && err.message ? err.message : String(err);
+          console.error(`[face] camera unavailable: ${name} — ${msg}`);
+          return;
+        }
+
+        const intervalMs = Math.round(1000 / TARGET_FPS);
+        setInterval(loop, intervalMs);
+      }
+
+      function loop() {
+        if (!faceLandmarker || !videoEl || videoEl.readyState < 2) {
+          return;
+        }
+        try {
+          const result = faceLandmarker.detectForVideo(videoEl, performance.now());
+          const blendshapes = result.faceBlendshapes ?? [];
+          if (blendshapes.length === 0) {
+            reportFace(0, false);
+            return;
+          }
+          const categories = blendshapes[0].categories ?? [];
+          const score = struggleScore(categories);
+          reportFace(score, true);
+        } catch (err) {
+          console.error("[face] frame error:", err);
+        }
+      }
+
+      init().catch((err) => console.error("[face] init failed:", err));
+    </script>
+  </body>
+</html>
