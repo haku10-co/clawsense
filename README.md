@@ -1,384 +1,158 @@
 # ClawSense
 
-ClawSense is a context-aware trigger layer for OpenClaw.
+[![Build in public](https://img.shields.io/badge/build-in%20public-FF6B6B)](https://github.com/haku10-co/clawsense)
+[![Status: alpha](https://img.shields.io/badge/status-alpha-yellow)](https://github.com/haku10-co/clawsense)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Platform: macOS](https://img.shields.io/badge/platform-macOS-lightgrey)](https://github.com/haku10-co/clawsense)
 
-It observes the user's current work context, detects or receives a moment of confusion, and connects that context to an agent session such as Claude Code, Codex, or OpenClaw. The first version should stay simple: the user presses a button, ClawSense captures the current screen, sends it to Claude Code, and returns one suggested next action.
+> A macOS menu bar layer that captures your screen, sends it to Claude Code, and proposes the next thing to do — and does it for you.
 
-## Core Idea
+ClawSense lives in your menu bar. Hit `⌘⇧Space`, and it captures the current screen, asks Claude Code through the local CLI, and returns three concrete next actions. Pick one and Claude Code goes off and actually executes it through your connected MCP integrations (Calendar, Gmail, Notion, Linear, etc.). Or hand the conversation off to a real terminal session with `--resume`.
 
-When users get stuck, the hardest part is often not asking for help. It is explaining the current context:
+> Built in public. Code first, polish later. PRs and ideas welcome.
 
-- What they are looking at
-- What they were trying to do
-- What they already tried
-- What failed
-- What they are likely to want next
+---
 
-ClawSense reduces that explanation cost by capturing the surrounding context and handing it to an agent.
+## Why
 
-## Product Positioning
+Asking AI for help has the same friction as asking a human: explaining the situation. ClawSense removes that friction by sending the screen as the situation, and asking Claude Code to figure out the next move.
 
-ClawSense should not be positioned as a generic AI butler at first.
+It is most useful when you:
 
-The stronger framing is:
+- have Claude Code running and a few MCPs wired up
+- juggle a lot of tabs and windows
+- get stuck on the meta-question of "what should I do next?"
+- prefer "just do it" over "tell me what to do"
 
-> A context-aware intent and trigger layer for OpenClaw.
+## What it does
 
-OpenClaw handles session execution, research, and agent work. ClawSense handles the moment before that: understanding when help is needed and packaging the right context.
+- **Screenshot trigger** — `⌘⇧Space` or click the menu bar `CS` icon
+- **Three directions** — Claude Code returns three short, action-oriented choices
+- **Pick one → execute** — Claude Code uses your live MCP integrations to actually do the thing (add a calendar event, draft an email, edit a file, file a ticket)
+- **Continue in chat** — keep iterating in the popover, or hand off to your terminal Claude Code session via `claude --resume <id>`
+- **Sensors** — knows your active app and which MCPs are connected, feeds that as context
+- **Editable prompts** — `picker.md` and `direction.md` are user-editable Markdown files
+- **Privacy** — screenshots stay on your Mac except for the call to Claude Code, which runs locally as a CLI
 
-## Initial Hypothesis
+## Status
 
-We believe that if a user can press one button while stuck, and ClawSense sends the current screen to Claude Code, then Claude Code can return one useful next action that helps the user continue without manually explaining the full situation.
+Pre-alpha. The codebase is the truth, the README is aspirational. Expect rough edges. Design decisions are documented in commit messages, not in long docs.
 
-Success signal:
+## Quick start
 
-- In at least 30% of triggered sessions, the user says the proposed action helped them move forward.
+### Prerequisites
 
-## Target User
+- macOS 13+
+- Node 20+
+- [Claude Code CLI](https://docs.anthropic.com/claude/docs/claude-code) installed and signed in (`claude` on your PATH)
+- (Optional) MCP integrations configured — `claude mcp list` should show at least one `✓ Connected`
 
-Initial target:
+### Run from source
 
-- Developers and power users already using Claude Code, Codex, or OpenClaw
-- Users who frequently get stuck inside codebases, terminals, browsers, docs, or local tools
-- Users who understand agent workflows but dislike repeatedly writing context prompts
-
-Later targets:
-
-- Non-technical operators using complex SaaS tools
-- Customer support and operations teams
-- Anyone working across many browser tabs and desktop apps
-
-## Product Principles
-
-- Suggest one next action, not a menu of options.
-- Start with user-triggered help before automatic detection.
-- Preserve user trust by making capture explicit.
-- Keep sensitive context local where possible.
-- Avoid automatic execution until suggestion quality is proven.
-- Treat face and emotion signals as optional trigger hints, not as stored identity data.
-
-## Roadmap
-
-### V0: Manual Trigger MVP
-
-Goal:
-
-- Validate whether screenshot-only context can produce useful next actions.
-
-Flow:
-
-1. User clicks the menu bar icon or presses a hotkey.
-2. ClawSense captures the current screen.
-3. User can optionally add a short note.
-4. ClawSense sends the screenshot and prompt to Claude Code.
-5. Claude Code investigates and reasons.
-6. ClawSense shows one suggestion card.
-7. User marks the suggestion as useful, wrong, or asks again.
-
-Scope:
-
-- Menu bar icon
-- Manual trigger
-- Global hotkey
-- Screenshot capture
-- Claude Code integration
-- One-card response UI
-- Basic feedback logging
-
-Out of scope:
-
-- Automatic operation
-- Background work logs
-- Facial expression detection
-- Multi-agent routing
-- Full OpenClaw integration
-
-### V1: Work Context Memory
-
-Goal:
-
-- Improve intent understanding by attaching recent local work context.
-
-Context to capture:
-
-- Active app
-- Window title
-- Browser URL
-- Recent screenshots
-- Current working directory
-- Open file names
-- Recent terminal errors
-- Recent command failures
-- Click and focus changes at a coarse level
-
-Privacy boundaries:
-
-- Do not capture raw keystroke contents by default.
-- Do not capture clipboard contents by default.
-- Mask secrets before sending context to remote models.
-- Keep rolling logs local and short-lived.
-- Let users inspect what will be sent.
-
-### V2: Behavioral Auto-Trigger
-
-Goal:
-
-- Detect likely stuck moments without requiring the user to press a button.
-
-Candidate signals:
-
-- Same error appears repeatedly.
-- Same screen remains active for a long time.
-- User switches between search results and the same work screen repeatedly.
-- Several commands fail in a row.
-- User repeatedly undoes or backtracks.
-- Input stops after an error or failed command.
-
-Behavior:
-
-- ClawSense should not interrupt aggressively.
-- It should show a small, dismissible suggestion to help.
-- The user should remain in control of whether context is sent.
-
-### V3: Optional Human Signals
-
-Goal:
-
-- Use physical signals as one additional trigger signal.
-
-Candidate signals:
-
-- Eyes closed for several seconds
-- Long inactive gaze
-- Visible frustration-like expression
-- Head down or disengaged posture
-
-Constraints:
-
-- Fully opt-in
-- Local-only processing
-- No face data storage
-- No identity recognition
-- No emotional claims in UI
-- Used only as a trigger hint
-
-## MVP Functional Requirements
-
-| ID | Requirement | Priority |
-| --- | --- | --- |
-| FR1 | ClawSense runs as a menu bar app. | P0 |
-| FR2 | User can trigger ClawSense from the menu bar icon. | P0 |
-| FR3 | User can trigger ClawSense with a global hotkey. | P0 |
-| FR4 | ClawSense can capture the current screen. | P0 |
-| FR5 | User can optionally add a short text note before sending. | P0 |
-| FR6 | ClawSense can send the screenshot and prompt to a Claude Code session. | P0 |
-| FR7 | ClawSense can receive the Claude Code response. | P0 |
-| FR8 | ClawSense displays exactly one suggested next action. | P0 |
-| FR9 | User can mark the suggestion as useful, wrong, or regenerate. | P0 |
-| FR10 | ClawSense logs trigger events and feedback locally. | P0 |
-| FR11 | ClawSense can show a subtle bottom-right trigger button. | P1 |
-| FR12 | ClawSense can attach recent work context. | P1 |
-| FR13 | ClawSense can detect likely stuck moments from behavior. | P2 |
-| FR14 | ClawSense can use optional camera-based trigger hints. | P3 |
-
-## Menu Bar Behavior
-
-The V0 entry point is the macOS menu bar icon.
-
-Menu actions:
-
-- Ask ClawSense
-- Add note and ask
-- Open recent suggestion
-- Settings
-- Quit
-
-Default interaction:
-
-- Left click opens the quick action menu.
-- `Ask ClawSense` captures the current screen and sends it to Claude Code.
-- `Add note and ask` opens a small note input before capture/send.
-- The answer appears as a bottom-right suggestion card.
-- The app stays out of the Dock by default if packaging allows it.
-
-## Non-Functional Requirements
-
-| Area | Requirement |
-| --- | --- |
-| Privacy | User-triggered capture must be explicit in V0. |
-| Privacy | Sensitive text should be masked before remote submission where possible. |
-| Latency | First response should appear within a tolerable agent response window. |
-| Trust | User should know what context is being sent. |
-| Control | No automatic execution in the MVP. |
-| Reliability | Failed agent calls should return a clear retry state. |
-| Extensibility | Claude Code should be implemented as an adapter so Codex and OpenClaw can be added later. |
-
-## Suggested Architecture
-
-```text
-Mac menu bar app / local desktop app
-  -> Trigger controller
-  -> Screenshot capture
-  -> Context collector
-  -> Privacy filter
-  -> Agent adapter
-       -> Claude Code adapter
-       -> Codex adapter
-       -> OpenClaw adapter
-  -> Suggestion card overlay
-  -> Feedback logger
+```bash
+git clone https://github.com/haku10-co/clawsense.git
+cd clawsense
+npm install
+npm start
 ```
 
-## V0 Technical Decision
+The first launch asks for two macOS permissions:
 
-The V0 implementation uses Electron and Claude Code CLI.
+- **Screen Recording** — to capture screenshots
+- **Automation → System Events** — to read which app is frontmost
 
-```text
-Framework: Electron + TypeScript
-Agent: Claude Code CLI
-Auth: User's existing Claude Code login / subscription
-Capture: Screenshot saved as a local file path
-Trigger: Menu bar + global hotkey
-UI: Bottom-right suggestion card
-Optional UI: Subtle bottom-right trigger button
-Log: Local JSONL
+Both are required. If a screenshot returns just your wallpaper, Screen Recording was denied; toggle it in System Settings and restart the app.
+
+### Build a packaged `.app`
+
+```bash
+# Unpacked .app for local testing (faster)
+npm run pack
+
+# DMG + zip for distribution
+npm run dist
 ```
 
-Detailed spec: [docs/mvp-spec.md](docs/mvp-spec.md)
+Output lands in `release/`.
 
-## Agent Prompt Shape
+## Architecture
 
-```text
-You are helping a user who is currently stuck.
-
-You will receive:
-- A screenshot of their current screen
-- Optional user note
-- Optional recent work context
-
-Your job:
-- Infer what the user is likely trying to do
-- Identify the next useful action
-- Return only one recommended action
-- Keep the answer concise
-- Do not suggest multiple paths unless absolutely necessary
-
-Output format:
-1. Likely intent
-2. Next action
-3. Why this action
-4. Confidence
+```
+┌──────────────────────────────────────────────────────────┐
+│ Tray (CS) — hotkey ⌘⇧Space                                │
+│   ↓                                                      │
+│ src/main/main.ts                                         │
+│   captureScreen → gatherContext → askClaude              │
+│                       │                ↓                 │
+│                       │            Picker (3 actions)    │
+│                       │                                  │
+│   ┌───────────────────┴─────────┐                        │
+│   ↓                             ↓                        │
+│ sensors/                    mcp.ts                       │
+│   active-app.ts              claude mcp list →           │
+│   (osascript)                connected/needs-auth/failed │
+│                                                          │
+│ User picks → session.startSession                        │
+│   ↓                                                      │
+│ askDirection (claude -p --session-id <uuid>)             │
+│   executes via MCP, reports back in the popover          │
+│   ↓                                                      │
+│ "Open in terminal" → osascript / open -na to             │
+│   user's preferred terminal with claude --resume <uuid>  │
+└──────────────────────────────────────────────────────────┘
 ```
 
-## Suggestion Card Shape
+Key files:
 
-```text
-Likely intent:
-[What the user seems to be trying to do]
+| File | Role |
+|---|---|
+| `src/main/main.ts` | Tray, hotkey, run pipeline |
+| `src/main/claude.ts` | spawn `claude` CLI, abort/timeout/resume |
+| `src/main/claude-binary.ts` | Find the `claude` binary across common install paths |
+| `src/main/session.ts` | Conversation state + Claude session lifecycle |
+| `src/main/mcp.ts` | `claude mcp list` parser, 30s cache |
+| `src/main/sensors/active-app.ts` | Frontmost app via osascript |
+| `src/main/context.ts` | Compose the noteBlock from sensors + MCP + user note |
+| `src/main/terminal/` | Per-app terminal launchers for "Open in terminal" |
+| `src/renderer/` | Vanilla TS + HTML/CSS, no framework |
 
-Next action:
-[One concrete next step]
+## Privacy & permissions
 
-Why:
-[Short reason]
+- Screenshots are saved at `~/Library/Application Support/ClawSense/screenshots/` and passed to the local `claude -p` CLI. Anthropic receives them as part of the request your local Claude Code makes.
+- Window titles, app names, MCP server names live in process and may end up in `~/Library/Application Support/ClawSense/events.jsonl` for debugging — purely local.
+- No telemetry to ClawSense itself. There is no ClawSense server.
+- `--dangerously-skip-permissions` is passed to the Claude CLI. This is the deliberate trade-off for low-friction execution; understand it before enabling power features.
 
-Actions:
-- Do it
-- Wrong
-- Ask again
-```
+## Building in public
 
-## Metrics
+This repo is a daily working tree. Read the commit log to see why a decision was made — the messages are written for that. If something looks weird, it probably is, and there's a commit explaining why.
 
-Primary:
+Follow / heckle / suggest:
 
-- Useful suggestion rate
-- Regeneration rate
-- Wrong suggestion rate
-- Time from trigger to useful answer
+- GitHub: [@haku10-co](https://github.com/haku10-co)
+- Issues for bugs, Discussions for ideas
 
-Secondary:
+## Roadmap (rough)
 
-- Trigger frequency
-- Repeat usage
-- Accepted suggestions per user per week
-- Sessions where user continues working after suggestion
-- Manual trigger to auto-trigger conversion rate
+- [x] 3-action picker over Claude Code CLI
+- [x] MCP awareness in prompt
+- [x] Active-app sensor (S1)
+- [x] Editable prompts on disk
+- [x] History + reopen
+- [x] Persisted window bounds
+- [x] Hidden-while-thinking UX
+- [ ] Crop to frontmost window for tighter screenshots
+- [ ] Transition tracker (15min ring buffer of app focus)
+- [ ] Optional passive auto-suggest when stuck
+- [ ] OCR pipeline via Gemini (parking lot)
+- [ ] Settings UI (currently env / file edit only)
 
-## Main Risks
+## Contributing
 
-### Context Risk
+This is early; please do not open large PRs without an issue first. Small fixes, typo PRs, prompt suggestions — go for it.
 
-The screenshot alone may not contain enough information to infer intent.
+If you want to chat about a feature, open a Discussion.
 
-Mitigation:
+## License
 
-- Add optional user note in V0.
-- Add recent work context in V1.
-
-### Trust Risk
-
-Users may feel uncomfortable with screen or camera capture.
-
-Mitigation:
-
-- Start with explicit manual trigger.
-- Show what will be sent.
-- Keep logs local by default.
-- Make camera signals opt-in only.
-
-### Interruption Risk
-
-Auto-triggering may feel annoying or wrong.
-
-Mitigation:
-
-- Delay auto-trigger until V2.
-- Use quiet, dismissible prompts.
-- Tune trigger thresholds from user feedback.
-
-### Value Risk
-
-The agent may produce obvious or generic advice.
-
-Mitigation:
-
-- Focus on developers and power users first.
-- Include codebase, terminal, and URL context.
-- Measure whether suggestions actually help users continue.
-
-## Open Questions
-
-- Should V0 be a Mac menu bar app, Electron app, or Tauri app?
-- What is the cleanest way to create or attach to a Claude Code session?
-- Should the first response be generated by Claude Code directly or by a smaller local router first?
-- What context should be visible to the user before sending?
-- How much of the recent work log should be retained?
-- Should OpenClaw become the default agent runtime after Claude Code validation?
-
-## 30-Day Plan
-
-Week 1:
-
-- Build manual trigger.
-- Capture screenshot.
-- Send screenshot to Claude Code.
-- Render one suggestion card.
-
-Week 2:
-
-- Add feedback buttons.
-- Log useful, wrong, and regenerate events.
-- Test with internal developer workflows.
-
-Week 3:
-
-- Add optional short user note.
-- Improve prompt format.
-- Measure suggestion usefulness.
-
-Week 4:
-
-- Decide whether to continue with screenshot-only V0 or move to V1 context logs.
-- Define first work-context collector.
-- Prepare OpenClaw adapter design.
+MIT — see [LICENSE](LICENSE).

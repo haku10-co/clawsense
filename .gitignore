@@ -4,3 +4,9 @@ release/
 .DS_Store
 npm-debug.log*
 *.local
+
+# Internal planning / parking lot — not for public repo
+docs/feature-ideas.md
+docs/implementation-plan.md
+docs/mvp-research.md
+docs/mvp-spec.md
