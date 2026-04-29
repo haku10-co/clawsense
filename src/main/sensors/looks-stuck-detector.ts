@@ -49,7 +49,14 @@ function envNumber(name: string, fallback: number, opts: { min?: number; max?: n
   if (!Number.isFinite(value)) {
     return fallback;
   }
-  return Math.min(opts.max ?? value, Math.max(opts.min ?? value, value));
+  let clamped = value;
+  if (opts.min !== undefined) {
+    clamped = Math.max(opts.min, clamped);
+  }
+  if (opts.max !== undefined) {
+    clamped = Math.min(opts.max, clamped);
+  }
+  return clamped;
 }
 
 const CONFIG: LooksStuckConfig = {

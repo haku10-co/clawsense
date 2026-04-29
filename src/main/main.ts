@@ -222,15 +222,8 @@ function buildLooksStuckNote(state: LooksStuckState): string {
 
 function logLooksStuckState(state: LooksStuckState, now: number): void {
   const reasonChanged = state.reason !== lastLooksStuckReason;
-  const shouldLog =
-    reasonChanged ||
-    state.candidate ||
-    LOOKS_STUCK_DEBUG_ENABLED ||
-    now - lastLooksStuckLogAt >= LOOKS_STUCK_LOG_INTERVAL_MS;
+  const shouldLog = reasonChanged || now - lastLooksStuckLogAt >= LOOKS_STUCK_LOG_INTERVAL_MS;
   if (!shouldLog) {
-    return;
-  }
-  if (!reasonChanged && !state.candidate && now - lastLooksStuckLogAt < LOOKS_STUCK_LOG_INTERVAL_MS) {
     return;
   }
 
