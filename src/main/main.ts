@@ -28,6 +28,7 @@ import {
   stopAppContextWatcher
 } from "./sensors/app-context-watcher";
 import {
+  getLooksStuckConfig,
   markLooksStuckTriggered,
   recordLooksStuckSample,
   type LooksStuckState
@@ -53,20 +54,27 @@ let saveBoundsTimer: NodeJS.Timeout | null = null;
 let recentHistory: HistoricalSession[] = [];
 let currentAskController: AbortController | null = null;
 let lastLooksStuckLogAt = 0;
+let lastLooksStuckReason: string | null = null;
 let suggestionDocked = false;
 let shortcutRegistered = false;
 
 const HOTKEY = "CommandOrControl+Shift+Space";
-const PASSIVE_STUCK_ENABLED = process.env.CLAWSENSE_PASSIVE_STUCK === "1";
+const FACE_DEBUG_ENABLED = process.env.CLAWSENSE_FACE_DEBUG === "1";
+const LOOKS_STUCK_DEBUG_ENABLED =
+  FACE_DEBUG_ENABLED || process.env.CLAWSENSE_LOOKS_STUCK_DEBUG === "1";
+const PASSIVE_STUCK_ENABLED =
+  process.env.CLAWSENSE_PASSIVE_STUCK === "0"
+    ? false
+    : process.env.CLAWSENSE_PASSIVE_STUCK === "1" || LOOKS_STUCK_DEBUG_ENABLED;
 const FACE_WATCHER_ENABLED =
   PASSIVE_STUCK_ENABLED ||
-  process.env.CLAWSENSE_FACE_DEBUG === "1" ||
+  FACE_DEBUG_ENABLED ||
   process.env.CLAWSENSE_FACE_WATCHER === "1";
 const LOOKS_STUCK_CONTEXT_ENABLED =
   PASSIVE_STUCK_ENABLED ||
-  process.env.CLAWSENSE_FACE_DEBUG === "1" ||
-  process.env.CLAWSENSE_LOOKS_STUCK_DEBUG === "1";
-const LOOKS_STUCK_LOG_INTERVAL_MS = 10_000;
+  LOOKS_STUCK_DEBUG_ENABLED;
+const LOOKS_STUCK_LOG_INTERVAL_MS = LOOKS_STUCK_DEBUG_ENABLED ? 2_500 : 10_000;
+const LOOKS_STUCK_CONFIG = getLooksStuckConfig();
 
 configureAppPaths();
 
@@ -207,8 +215,36 @@ function buildLooksStuckNote(state: LooksStuckState): string {
     `max=${state.maxScore.toFixed(3)} ` +
     `over=${state.overRatio.toFixed(2)} ` +
     `visible=${state.visibleRatio.toFixed(2)} ` +
-    `calibrated=${state.calibratedRatio.toFixed(2)}`
+    `calibrated=${state.calibratedRatio.toFixed(2)} ` +
+    `reason=${state.reason}`
   );
+}
+
+function logLooksStuckState(state: LooksStuckState, now: number): void {
+  const reasonChanged = state.reason !== lastLooksStuckReason;
+  const shouldLog = reasonChanged || now - lastLooksStuckLogAt >= LOOKS_STUCK_LOG_INTERVAL_MS;
+  if (!shouldLog) {
+    return;
+  }
+
+  lastLooksStuckReason = state.reason;
+  lastLooksStuckLogAt = now;
+  console.log(
+    `[looks-stuck] candidate=${state.candidate} triggerable=${state.triggerable} ` +
+      `reason=${state.reason} passive=${PASSIVE_STUCK_ENABLED} app=${state.activeAppName ?? "unknown"} ` +
+      `avg=${state.avgScore.toFixed(3)} p75=${state.p75Score.toFixed(3)} ` +
+      `max=${state.maxScore.toFixed(3)} over=${state.overRatio.toFixed(2)} ` +
+      `visible=${state.visibleRatio.toFixed(2)} calibrated=${state.calibratedRatio.toFixed(2)} ` +
+      `appStable=${state.appStability.toFixed(2)} samples=${state.samples} ` +
+      `window=${(state.windowMs / 1000).toFixed(1)}s`
+  );
+  void logEvent({
+    type: state.candidate ? "looks_stuck_candidate" : "looks_stuck_state",
+    createdAt: new Date().toISOString(),
+    passiveEnabled: PASSIVE_STUCK_ENABLED,
+    config: LOOKS_STUCK_CONFIG,
+    ...state
+  });
 }
 
 function handleLooksStuckSample(sample: FaceSample): void {
@@ -220,23 +256,7 @@ function handleLooksStuckSample(sample: FaceSample): void {
     blocked
   });
   const now = Date.now();
-  if (state.candidate && now - lastLooksStuckLogAt >= LOOKS_STUCK_LOG_INTERVAL_MS) {
-    lastLooksStuckLogAt = now;
-    console.log(
-      `[looks-stuck] candidate=${state.candidate} triggerable=${state.triggerable} ` +
-        `reason=${state.reason} app=${state.activeAppName ?? "unknown"} ` +
-        `avg=${state.avgScore.toFixed(3)} p75=${state.p75Score.toFixed(3)} ` +
-        `max=${state.maxScore.toFixed(3)} over=${state.overRatio.toFixed(2)} ` +
-        `visible=${state.visibleRatio.toFixed(2)} calibrated=${state.calibratedRatio.toFixed(2)} ` +
-        `appStable=${state.appStability.toFixed(2)}`
-    );
-    void logEvent({
-      type: "looks_stuck_candidate",
-      createdAt: new Date().toISOString(),
-      passiveEnabled: PASSIVE_STUCK_ENABLED,
-      ...state
-    });
-  }
+  logLooksStuckState(state, now);
   if (PASSIVE_STUCK_ENABLED && state.triggerable) {
     markLooksStuckTriggered(now);
     void runAsk("looks-stuck", buildLooksStuckNote(state));

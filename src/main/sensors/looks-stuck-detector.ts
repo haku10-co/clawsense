@@ -21,21 +21,59 @@ export type LooksStuckState = {
   activeAppName: string | null;
 };
 
+export type LooksStuckConfig = {
+  windowMs: number;
+  minSpanMs: number;
+  cooldownMs: number;
+  scoreThreshold: number;
+  minSamples: number;
+  minVisibleRatio: number;
+  minCalibratedRatio: number;
+  minOverRatio: number;
+  minP75Score: number;
+  minAppStability: number;
+};
+
 type TimedSample = {
   ts: number;
   sample: FaceSample;
   activeAppName: string | null;
 };
 
-const WINDOW_MS = 12_000;
-const MIN_SPAN_MS = 9_000;
-const COOLDOWN_MS = 8 * 60_000;
-const SCORE_THRESHOLD = 0.5;
-const MIN_VISIBLE_RATIO = 0.8;
-const MIN_CALIBRATED_RATIO = 0.8;
-const MIN_OVER_RATIO = 0.55;
-const MIN_P75_SCORE = 0.48;
-const MIN_APP_STABILITY = 0.7;
+function envNumber(name: string, fallback: number, opts: { min?: number; max?: number } = {}): number {
+  const raw = process.env[name];
+  if (!raw) {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    return fallback;
+  }
+  let clamped = value;
+  if (opts.min !== undefined) {
+    clamped = Math.max(opts.min, clamped);
+  }
+  if (opts.max !== undefined) {
+    clamped = Math.min(opts.max, clamped);
+  }
+  return clamped;
+}
+
+const CONFIG: LooksStuckConfig = {
+  windowMs: envNumber("CLAWSENSE_STUCK_WINDOW_MS", 8_000, { min: 2_000 }),
+  minSpanMs: envNumber("CLAWSENSE_STUCK_MIN_SPAN_MS", 5_000, { min: 1_000 }),
+  cooldownMs: envNumber("CLAWSENSE_STUCK_COOLDOWN_MS", 90_000, { min: 10_000 }),
+  scoreThreshold: envNumber("CLAWSENSE_STUCK_SCORE_THRESHOLD", 0.32, { min: 0, max: 1 }),
+  minSamples: envNumber("CLAWSENSE_STUCK_MIN_SAMPLES", 5, { min: 2 }),
+  minVisibleRatio: envNumber("CLAWSENSE_STUCK_MIN_VISIBLE_RATIO", 0.6, { min: 0, max: 1 }),
+  minCalibratedRatio: envNumber("CLAWSENSE_STUCK_MIN_CALIBRATED_RATIO", 0.4, {
+    min: 0,
+    max: 1
+  }),
+  minOverRatio: envNumber("CLAWSENSE_STUCK_MIN_OVER_RATIO", 0.25, { min: 0, max: 1 }),
+  minP75Score: envNumber("CLAWSENSE_STUCK_MIN_P75_SCORE", 0.28, { min: 0, max: 1 }),
+  minAppStability: envNumber("CLAWSENSE_STUCK_MIN_APP_STABILITY", 0.45, { min: 0, max: 1 })
+};
 
 let samples: TimedSample[] = [];
 let lastTriggerAt = 0;
@@ -73,13 +111,13 @@ function appStability(window: TimedSample[]): { ratio: number; name: string | nu
 
 function blockedReason(state: LooksStuckState, blocked: boolean): string | null {
   if (blocked) return "blocked";
-  if (state.samples < 8) return "few_samples";
-  if (state.windowMs < MIN_SPAN_MS) return "short_window";
-  if (state.visibleRatio < MIN_VISIBLE_RATIO) return "low_visibility";
-  if (state.calibratedRatio < MIN_CALIBRATED_RATIO) return "calibrating";
-  if (state.appStability < MIN_APP_STABILITY) return "app_switching";
-  if (state.overRatio < MIN_OVER_RATIO) return "not_sustained";
-  if (state.p75Score < MIN_P75_SCORE) return "weak_score";
+  if (state.samples < CONFIG.minSamples) return "few_samples";
+  if (state.windowMs < CONFIG.minSpanMs) return "short_window";
+  if (state.visibleRatio < CONFIG.minVisibleRatio) return "low_visibility";
+  if (state.calibratedRatio < CONFIG.minCalibratedRatio) return "calibrating";
+  if (state.appStability < CONFIG.minAppStability) return "app_switching";
+  if (state.overRatio < CONFIG.minOverRatio) return "not_sustained";
+  if (state.p75Score < CONFIG.minP75Score) return "weak_score";
   return null;
 }
 
@@ -89,13 +127,13 @@ export function recordLooksStuckSample(
   now = Date.now()
 ): LooksStuckState {
   samples.push({ ts: now, sample, activeAppName: context.activeAppName });
-  samples = samples.filter((entry) => entry.ts >= now - WINDOW_MS);
+  samples = samples.filter((entry) => entry.ts >= now - CONFIG.windowMs);
 
   const first = samples[0]?.ts ?? now;
   const scores = samples.map((entry) => scoreOf(entry.sample));
   const visible = samples.filter((entry) => entry.sample.faceVisible).length;
   const calibrated = samples.filter((entry) => entry.sample.calibrated !== false).length;
-  const over = scores.filter((score) => score >= SCORE_THRESHOLD).length;
+  const over = scores.filter((score) => score >= CONFIG.scoreThreshold).length;
   const app = appStability(samples);
   const state: LooksStuckState = {
     candidate: false,
@@ -116,7 +154,7 @@ export function recordLooksStuckSample(
   const reason = blockedReason(state, context.blocked);
   state.candidate = reason === null;
   state.reason = reason ?? "candidate";
-  state.triggerable = state.candidate && now - lastTriggerAt >= COOLDOWN_MS;
+  state.triggerable = state.candidate && now - lastTriggerAt >= CONFIG.cooldownMs;
   if (state.candidate && !state.triggerable) {
     state.reason = "cooldown";
   }
@@ -130,4 +168,8 @@ export function markLooksStuckTriggered(now = Date.now()): void {
 export function resetLooksStuckDetector(): void {
   samples = [];
   lastTriggerAt = 0;
+}
+
+export function getLooksStuckConfig(): LooksStuckConfig {
+  return { ...CONFIG };
 }
