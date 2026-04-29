@@ -1,14 +1,16 @@
 import { app, BrowserWindow, ipcMain, Menu, Tray, globalShortcut, shell } from "electron";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
+import { configureAppPaths, getAppDataDir, getLogsDir } from "./app-paths";
 import { clampToScreen, loadBounds, saveBounds } from "./bounds";
-import { captureScreen, SCREENSHOTS_DIR } from "./capture";
+import { captureScreen, getScreenshotsDir } from "./capture";
 import { askClaude, ClaudeAbortError } from "./claude";
 import { gatherContext, renderNoteBlock } from "./context";
 import { getById, listRecent, saveSession, type HistoricalSession } from "./history";
 import { registerIpcHandlers } from "./ipc";
 import { logEvent } from "./logger";
 import {
+  openCameraSettings,
   getScreenAccessStatus,
   openScreenRecordingSettings,
   triggerScreenAccessPrompt
@@ -17,11 +19,29 @@ import { ensurePromptsExist } from "./prompts";
 import {
   recordFaceSample,
   startFaceWatcher,
+  stopFaceWatcher,
   type FaceSample
 } from "./sensors/face-watcher";
+import {
+  getCurrentActiveAppName,
+  startAppContextWatcher,
+  stopAppContextWatcher
+} from "./sensors/app-context-watcher";
+import {
+  markLooksStuckTriggered,
+  recordLooksStuckSample,
+  type LooksStuckState
+} from "./sensors/looks-stuck-detector";
 import { getSessionSnapshot, restoreSession } from "./session";
+import { logStartupDiagnostics } from "./startup-diagnostics";
 import type { ResultPayload, SuggestionPayload, TriggerSource } from "./types";
-import { createPromptsWindow, createSuggestionWindow, createTrayIcon } from "./windows";
+import {
+  applyDockIndicator,
+  applySuggestionPanelBounds,
+  createPromptsWindow,
+  createSuggestionWindow,
+  createTrayIcon
+} from "./windows";
 
 let tray: Tray | null = null;
 let suggestionWindow: BrowserWindow | null = null;
@@ -32,8 +52,28 @@ let cachedBounds: { x: number; y: number; width: number; height: number } | null
 let saveBoundsTimer: NodeJS.Timeout | null = null;
 let recentHistory: HistoricalSession[] = [];
 let currentAskController: AbortController | null = null;
+let lastLooksStuckLogAt = 0;
+let suggestionDocked = false;
+let shortcutRegistered = false;
 
 const HOTKEY = "CommandOrControl+Shift+Space";
+const PASSIVE_STUCK_ENABLED = process.env.CLAWSENSE_PASSIVE_STUCK === "1";
+const FACE_WATCHER_ENABLED =
+  PASSIVE_STUCK_ENABLED ||
+  process.env.CLAWSENSE_FACE_DEBUG === "1" ||
+  process.env.CLAWSENSE_FACE_WATCHER === "1";
+const LOOKS_STUCK_CONTEXT_ENABLED =
+  PASSIVE_STUCK_ENABLED ||
+  process.env.CLAWSENSE_FACE_DEBUG === "1" ||
+  process.env.CLAWSENSE_LOOKS_STUCK_DEBUG === "1";
+const LOOKS_STUCK_LOG_INTERVAL_MS = 10_000;
+
+configureAppPaths();
+
+const gotInstanceLock = app.requestSingleInstanceLock();
+if (!gotInstanceLock) {
+  app.exit(0);
+}
 
 function preloadPath(): string {
   return path.join(__dirname, "preload.js");
@@ -41,6 +81,9 @@ function preloadPath(): string {
 
 function scheduleBoundsPersist(): void {
   if (!suggestionWindow || suggestionWindow.isDestroyed()) {
+    return;
+  }
+  if (suggestionDocked) {
     return;
   }
   if (saveBoundsTimer) {
@@ -86,14 +129,38 @@ function showPromptsEditor(): void {
 }
 
 function showSuggestion(payload: SuggestionPayload): void {
-  lastSuggestion = payload;
-  pendingSuggestion = payload;
+  const visiblePayload = { ...payload, compact: false };
+  lastSuggestion = visiblePayload;
+  pendingSuggestion = visiblePayload;
   const win = ensureSuggestionWindow();
 
+  suggestionDocked = false;
+  applySuggestionPanelBounds(win);
   win.showInactive();
   sendPendingSuggestion();
   setTimeout(sendPendingSuggestion, 100);
   setTimeout(sendPendingSuggestion, 500);
+}
+
+function showThinkingIndicator(triggerId: string): void {
+  pendingSuggestion = {
+    triggerId,
+    headline: "考え中",
+    hint: "",
+    actions: [],
+    rawText: "",
+    latencyMs: 0,
+    screenshotPath: "",
+    pending: true,
+    compact: true
+  };
+
+  const win = ensureSuggestionWindow();
+  suggestionDocked = true;
+  applyDockIndicator(win);
+  win.showInactive();
+  sendPendingSuggestion();
+  setTimeout(sendPendingSuggestion, 100);
 }
 
 function sendPendingSuggestion(): void {
@@ -113,11 +180,67 @@ function sendResult(payload: ResultPayload): void {
   suggestionWindow.webContents.send("result:update", payload);
 }
 
+function showStartupError(error: unknown): void {
+  const message = error instanceof Error ? error.stack || error.message : String(error);
+  console.error("[startup] failed:", message);
+  void logEvent({
+    type: "startup_error",
+    createdAt: new Date().toISOString(),
+    message
+  });
+}
+
 function setTrayThinking(thinking: boolean): void {
   if (!tray || process.platform !== "darwin") {
     return;
   }
   tray.setTitle(thinking ? "CS·" : "CS");
+}
+
+function buildLooksStuckNote(state: LooksStuckState): string {
+  return (
+    "自動検出: 直近の作業で詰まっていそうな状態が継続しています。\n" +
+    `activeApp=${state.activeAppName ?? "unknown"} ` +
+    `window=${(state.windowMs / 1000).toFixed(1)}s ` +
+    `avg=${state.avgScore.toFixed(3)} ` +
+    `p75=${state.p75Score.toFixed(3)} ` +
+    `max=${state.maxScore.toFixed(3)} ` +
+    `over=${state.overRatio.toFixed(2)} ` +
+    `visible=${state.visibleRatio.toFixed(2)} ` +
+    `calibrated=${state.calibratedRatio.toFixed(2)}`
+  );
+}
+
+function handleLooksStuckSample(sample: FaceSample): void {
+  const blocked =
+    Boolean(currentAskController) ||
+    Boolean(suggestionWindow && !suggestionWindow.isDestroyed() && suggestionWindow.isVisible());
+  const state = recordLooksStuckSample(sample, {
+    activeAppName: LOOKS_STUCK_CONTEXT_ENABLED ? getCurrentActiveAppName() : null,
+    blocked
+  });
+  const now = Date.now();
+  if (state.candidate && now - lastLooksStuckLogAt >= LOOKS_STUCK_LOG_INTERVAL_MS) {
+    lastLooksStuckLogAt = now;
+    console.log(
+      `[looks-stuck] candidate=${state.candidate} triggerable=${state.triggerable} ` +
+        `reason=${state.reason} app=${state.activeAppName ?? "unknown"} ` +
+        `avg=${state.avgScore.toFixed(3)} p75=${state.p75Score.toFixed(3)} ` +
+        `max=${state.maxScore.toFixed(3)} over=${state.overRatio.toFixed(2)} ` +
+        `visible=${state.visibleRatio.toFixed(2)} calibrated=${state.calibratedRatio.toFixed(2)} ` +
+        `appStable=${state.appStability.toFixed(2)}`
+    );
+    void logEvent({
+      type: "looks_stuck_candidate",
+      createdAt: new Date().toISOString(),
+      passiveEnabled: PASSIVE_STUCK_ENABLED,
+      ...state
+    });
+  }
+  if (PASSIVE_STUCK_ENABLED && state.triggerable) {
+    markLooksStuckTriggered(now);
+    void runAsk("looks-stuck", buildLooksStuckNote(state));
+  }
 }
 
 async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
@@ -130,8 +253,8 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
   const triggerId = randomUUID();
   const startedAt = Date.now();
 
-  // 考えてる間はウィンドウを隠してトレイだけで通知。
-  suggestionWindow?.hide();
+  // 考えてる間は右下の小さいインジケータだけを出す。
+  showThinkingIndicator(triggerId);
   setTrayThinking(true);
 
   const accessStatus = getScreenAccessStatus();
@@ -157,6 +280,10 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
       status: accessStatus,
       createdAt: new Date().toISOString()
     });
+    if (currentAskController === ctrl) {
+      currentAskController = null;
+      setTrayThinking(false);
+    }
     return;
   }
 
@@ -220,7 +347,7 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
     showSuggestion({
       triggerId,
       headline: "リクエストを完了できませんでした",
-      hint: "画面収録の権限と Claude Code CLI のログイン状態をご確認ください",
+      hint: message.slice(0, 220) || "画面収録の権限と Claude Code CLI のログイン状態をご確認ください",
       actions: [],
       rawText: message,
       latencyMs: Date.now() - startedAt,
@@ -255,7 +382,10 @@ async function reopenHistorySession(triggerId: string): Promise<void> {
     return;
   }
   const payload = restoreSession(stored);
-  ensureSuggestionWindow().showInactive();
+  const win = ensureSuggestionWindow();
+  suggestionDocked = false;
+  applySuggestionPanelBounds(win);
+  win.showInactive();
   sendResult(payload);
 }
 
@@ -271,6 +401,7 @@ function buildHistorySubmenu(): Electron.MenuItemConstructorOptions[] {
 
 function buildMenu(): Menu {
   const lastScreenshot = lastSuggestion?.screenshotPath;
+  const screenshotDir = getScreenshotsDir();
   return Menu.buildFromTemplate([
     { label: "ClawSense に聞く", click: () => void runAsk("menu") },
     {
@@ -284,9 +415,16 @@ function buildMenu(): Menu {
     {
       label: "デバッグ",
       submenu: [
+        {
+          label: shortcutRegistered ? `ホットキー: ${HOTKEY}` : `ホットキー未登録: ${HOTKEY}`,
+          enabled: false
+        },
         { label: "画面収録の設定を開く", click: () => openScreenRecordingSettings() },
+        { label: "カメラの設定を開く", click: () => openCameraSettings() },
         { type: "separator" },
-        { label: "スクショフォルダを開く", click: () => void shell.openPath(SCREENSHOTS_DIR) },
+        { label: "データフォルダを開く", click: () => void shell.openPath(getAppDataDir()) },
+        { label: "ログフォルダを開く", click: () => void shell.openPath(getLogsDir()) },
+        { label: "スクショフォルダを開く", click: () => void shell.openPath(screenshotDir) },
         {
           label: "直前のスクショを開く",
           enabled: Boolean(lastScreenshot),
@@ -312,17 +450,18 @@ async function persistCurrentSession(): Promise<void> {
   refreshTrayMenu();
 }
 
+app.on("second-instance", () => {
+  refreshTrayMenu();
+  if (lastSuggestion) {
+    showSuggestion(lastSuggestion);
+  }
+});
+
+process.on("uncaughtException", showStartupError);
+process.on("unhandledRejection", showStartupError);
+
 app.whenReady().then(async () => {
   app.dock?.hide();
-  await ensurePromptsExist().catch(() => {
-    /* prompts dir creation failure should not block app startup */
-  });
-
-  const stored = await loadBounds();
-  cachedBounds = stored ? clampToScreen(stored) : null;
-
-  recentHistory = await listRecent(10);
-
   tray = new Tray(createTrayIcon());
   tray.setToolTip("ClawSense");
   if (process.platform === "darwin") {
@@ -334,9 +473,31 @@ app.whenReady().then(async () => {
     tray?.popUpContextMenu();
   });
 
-  globalShortcut.register(HOTKEY, () => {
+  void logStartupDiagnostics().catch(showStartupError);
+
+  await ensurePromptsExist().catch(() => {
+    /* prompts dir creation failure should not block app startup */
+  });
+
+  const stored = await loadBounds();
+  cachedBounds = stored ? clampToScreen(stored) : null;
+
+  recentHistory = await listRecent(10).catch(() => []);
+  if (LOOKS_STUCK_CONTEXT_ENABLED) {
+    startAppContextWatcher();
+  }
+
+  shortcutRegistered = globalShortcut.register(HOTKEY, () => {
     void runAsk("hotkey");
   });
+  if (!shortcutRegistered) {
+    await logEvent({
+      type: "hotkey_failed",
+      createdAt: new Date().toISOString(),
+      accelerator: HOTKEY
+    });
+  }
+  refreshTrayMenu();
 
   registerIpcHandlers({
     getSuggestionWindow: () => suggestionWindow,
@@ -353,11 +514,20 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("face:sample", (_event, sample: FaceSample) => {
     recordFaceSample(sample);
+    handleLooksStuckSample(sample);
   });
 
-  startFaceWatcher({ preloadPath: preloadPath() });
+  if (FACE_WATCHER_ENABLED) {
+    void startFaceWatcher({ preloadPath: preloadPath() }).catch(showStartupError);
+  }
+}).catch(showStartupError);
+
+app.on("window-all-closed", () => {
+  // Tray app: keep the process alive even when all transient windows close.
 });
 
 app.on("will-quit", () => {
+  stopAppContextWatcher();
+  stopFaceWatcher();
   globalShortcut.unregisterAll();
 });

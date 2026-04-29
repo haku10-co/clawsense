@@ -94,10 +94,66 @@ textarea {
 }
 
 .suggestion-card {
+  position: relative;
   display: grid;
   grid-template-rows: auto auto auto auto auto auto auto;
   gap: 0;
   overflow: hidden;
+}
+
+[data-compact="true"] .suggestion-shell {
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+[data-compact="true"] .suggestion-card {
+  width: 56px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14px;
+  -webkit-app-region: drag;
+  app-region: drag;
+}
+
+[data-compact="true"] .suggestion-topbar,
+[data-compact="true"] .state-picker,
+[data-compact="true"] .state-result {
+  display: none;
+}
+
+[data-compact="true"] .suggestion-card::before,
+[data-compact="true"] .suggestion-card::after {
+  content: "";
+  display: block;
+  border-radius: 12px;
+}
+
+[data-compact="true"] .suggestion-card::before {
+  width: 30px;
+  height: 30px;
+  background:
+    linear-gradient(90deg, transparent 13px, #ffffff 13px 17px, transparent 17px),
+    linear-gradient(0deg, transparent 13px, #ffffff 13px 17px, transparent 17px),
+    var(--primary);
+  box-shadow: 0 8px 18px rgba(110, 124, 255, 0.24);
+}
+
+[data-compact="true"] .suggestion-card::after {
+  position: absolute;
+  width: 38px;
+  height: 38px;
+  border: 2px solid rgba(110, 124, 255, 0.26);
+  border-top-color: var(--primary);
+  animation: dock-spin 1.1s linear infinite;
+}
+
+@keyframes dock-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .note-panel {

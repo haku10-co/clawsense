@@ -21,6 +21,30 @@ export function createTrayIcon(): Electron.NativeImage {
 
 type SuggestionBounds = { x: number; y: number; width: number; height: number };
 
+const SUGGESTION_WIDTH = 420;
+const SUGGESTION_HEIGHT = 380;
+const SUGGESTION_MIN_WIDTH = 360;
+const SUGGESTION_MIN_HEIGHT = 280;
+const SUGGESTION_MARGIN = 24;
+const DOCK_INDICATOR_SIZE = 56;
+
+function defaultSuggestionBounds(): SuggestionBounds {
+  const display = screen.getPrimaryDisplay();
+  return {
+    width: SUGGESTION_WIDTH,
+    height: SUGGESTION_HEIGHT,
+    x: Math.round(display.workArea.x + display.workArea.width - SUGGESTION_WIDTH - SUGGESTION_MARGIN),
+    y: Math.round(display.workArea.y + display.workArea.height - SUGGESTION_HEIGHT - SUGGESTION_MARGIN)
+  };
+}
+
+function usableSuggestionBounds(bounds: SuggestionBounds | null | undefined): SuggestionBounds {
+  if (!bounds || bounds.width < SUGGESTION_MIN_WIDTH || bounds.height < 220) {
+    return defaultSuggestionBounds();
+  }
+  return bounds;
+}
+
 type SuggestionWindowOptions = {
   preloadPath: string;
   onClosed: () => void;
@@ -30,21 +54,13 @@ type SuggestionWindowOptions = {
 };
 
 export function createSuggestionWindow(opts: SuggestionWindowOptions): BrowserWindow {
-  const display = screen.getPrimaryDisplay();
-  const margin = 24;
-  const fallback: SuggestionBounds = {
-    width: 420,
-    height: 380,
-    x: Math.round(display.workArea.x + display.workArea.width - 420 - margin),
-    y: Math.round(display.workArea.y + display.workArea.height - 380 - margin)
-  };
-  const bounds = opts.initialBounds ?? fallback;
+  const bounds = usableSuggestionBounds(opts.initialBounds);
 
   const win = new BrowserWindow({
     width: bounds.width,
     height: bounds.height,
-    minWidth: 360,
-    minHeight: 280,
+    minWidth: SUGGESTION_MIN_WIDTH,
+    minHeight: SUGGESTION_MIN_HEIGHT,
     x: bounds.x,
     y: bounds.y,
     frame: false,
@@ -69,6 +85,36 @@ export function createSuggestionWindow(opts: SuggestionWindowOptions): BrowserWi
   win.on("closed", opts.onClosed);
 
   return win;
+}
+
+export function applySuggestionPanelBounds(win: BrowserWindow): void {
+  if (win.isDestroyed()) {
+    return;
+  }
+
+  const current = win.getBounds();
+  const target = usableSuggestionBounds(current);
+  win.setMinimumSize(SUGGESTION_MIN_WIDTH, SUGGESTION_MIN_HEIGHT);
+  win.setResizable(true);
+  win.setBounds(target, false);
+}
+
+export function applyDockIndicator(win: BrowserWindow): void {
+  if (win.isDestroyed()) {
+    return;
+  }
+
+  const display = screen.getPrimaryDisplay();
+  const x = Math.round(
+    display.workArea.x + display.workArea.width - DOCK_INDICATOR_SIZE - SUGGESTION_MARGIN
+  );
+  const y = Math.round(
+    display.workArea.y + display.workArea.height - DOCK_INDICATOR_SIZE - SUGGESTION_MARGIN
+  );
+
+  win.setMinimumSize(DOCK_INDICATOR_SIZE, DOCK_INDICATOR_SIZE);
+  win.setResizable(false);
+  win.setBounds({ x, y, width: DOCK_INDICATOR_SIZE, height: DOCK_INDICATOR_SIZE }, false);
 }
 
 export function createNoteWindow(opts: { preloadPath: string; onClosed: () => void }): BrowserWindow {
@@ -129,10 +175,12 @@ export function applyResize(win: BrowserWindow, requestedHeight: number): void {
     return;
   }
 
+  win.setMinimumSize(SUGGESTION_MIN_WIDTH, SUGGESTION_MIN_HEIGHT);
+  win.setResizable(true);
+
   const display = screen.getPrimaryDisplay();
-  const margin = 24;
   const minHeight = 220;
-  const maxHeight = Math.max(minHeight, display.workArea.height - margin * 2);
+  const maxHeight = Math.max(minHeight, display.workArea.height - SUGGESTION_MARGIN * 2);
   const clamped = Math.round(
     Math.min(
       Math.max(Number.isFinite(requestedHeight) ? requestedHeight : minHeight, minHeight),
@@ -140,9 +188,10 @@ export function applyResize(win: BrowserWindow, requestedHeight: number): void {
     )
   );
 
-  const { width } = win.getBounds();
-  const x = Math.round(display.workArea.x + display.workArea.width - width - margin);
-  const y = Math.round(display.workArea.y + display.workArea.height - clamped - margin);
+  const { width: currentWidth } = win.getBounds();
+  const width = Math.max(currentWidth, SUGGESTION_MIN_WIDTH);
+  const x = Math.round(display.workArea.x + display.workArea.width - width - SUGGESTION_MARGIN);
+  const y = Math.round(display.workArea.y + display.workArea.height - clamped - SUGGESTION_MARGIN);
 
   win.setBounds({ x, y, width, height: clamped }, false);
 }

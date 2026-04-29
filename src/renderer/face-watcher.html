@@ -4,12 +4,59 @@
     <meta charset="UTF-8" />
     <title>ClawSense Face Watcher</title>
     <style>
-      html, body { margin: 0; padding: 0; background: #000; overflow: hidden; }
-      video, canvas { display: none; }
+      :root { color-scheme: dark; }
+      html, body { margin: 0; padding: 0; background: #0b0f17; color: #d8e0f0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      body[data-debug="0"] { background: #000; }
+      body[data-debug="0"] video, body[data-debug="0"] .panel { display: none; }
+      .wrap { display: flex; flex-direction: column; gap: 12px; padding: 14px; height: 100vh; box-sizing: border-box; }
+      video { width: 100%; aspect-ratio: 4/3; object-fit: cover; background: #000; border-radius: 8px; transform: scaleX(-1); }
+      .video-box { position: relative; width: 100%; }
+      .video-overlay { position: absolute; left: 10px; right: 10px; bottom: 10px; padding: 8px 10px; border-radius: 7px; background: rgba(8, 12, 20, .78); color: #d8e0f0; font-size: 12px; line-height: 1.4; white-space: pre-wrap; pointer-events: none; }
+      .video-overlay:empty { display: none; }
+      .panel { background: #11182a; border: 1px solid #1f2840; border-radius: 8px; padding: 12px 14px; }
+      .row { display: flex; justify-content: space-between; align-items: baseline; }
+      .label { color: #7a8398; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; }
+      .val { font-variant-numeric: tabular-nums; font-size: 14px; }
+      .big { font-size: 28px; font-weight: 600; color: #fff; }
+      .bar-track { position: relative; height: 8px; background: #1f2840; border-radius: 4px; margin-top: 6px; overflow: hidden; }
+      .bar-fill { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(90deg, #5fd2a4, #f9c74f, #ff6b6b); transition: width .15s linear; }
+      .threshold { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #ffffff80; }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
+      .grid .row { padding: 4px 0; }
+      .status-ok { color: #5fd2a4; }
+      .status-warn { color: #ff8b8b; }
+      .status-muted { color: #9aa4b8; }
     </style>
   </head>
-  <body data-view="face-watcher">
-    <video id="video" autoplay muted playsinline></video>
+  <body data-view="face-watcher" data-debug="1">
+    <div class="wrap">
+      <div class="video-box">
+        <video id="video" autoplay muted playsinline></video>
+        <div class="video-overlay" id="videoStatus"></div>
+      </div>
+      <div class="panel">
+        <div class="row"><span class="label">struggle score</span><span id="status" class="val status-ok">—</span></div>
+        <div class="big" id="score">0.000</div>
+        <div class="bar-track">
+          <div class="bar-fill" id="bar" style="width:0%"></div>
+          <div class="threshold" id="thresholdMarker" style="left:35%"></div>
+        </div>
+      </div>
+      <div class="panel grid">
+        <div class="row"><span class="label">browDown</span><span class="val" id="bd">—</span></div>
+        <div class="row"><span class="label">browInnerUp</span><span class="val" id="bi">—</span></div>
+        <div class="row"><span class="label">mouthFrown</span><span class="val" id="mf">—</span></div>
+        <div class="row"><span class="label">eyeSquint</span><span class="val" id="es">—</span></div>
+        <div class="row"><span class="label">raw</span><span class="val" id="raw">—</span></div>
+        <div class="row"><span class="label">delta</span><span class="val" id="delta">—</span></div>
+        <div class="row"><span class="label">blend</span><span class="val" id="blend">—</span></div>
+        <div class="row"><span class="label">brow geo</span><span class="val" id="geo">—</span></div>
+        <div class="row"><span class="label">baseline</span><span class="val" id="base">—</span></div>
+        <div class="row"><span class="label">calibration</span><span class="val" id="cal">—</span></div>
+        <div class="row"><span class="label">face</span><span class="val" id="fv">—</span></div>
+        <div class="row"><span class="label">fps</span><span class="val" id="fps">—</span></div>
+      </div>
+    </div>
     <script type="module">
       /*
         Face watcher — runs in a hidden BrowserWindow.
@@ -36,43 +83,389 @@
       let videoEl = null;
       let lastLogAt = 0;
       let lastReportAt = 0;
+      let frameCount = 0;
+      let lastFpsAt = performance.now();
+      let calibrationStartAt = null;
+      let baseline = null;
+      let landmarkBaseline = null;
+      let smoothedScore = 0;
+      let smoothedLandmarkScore = 0;
+      const CALIBRATION_MS = 3000;
+      const STRUGGLE_THRESHOLD = 0.45;
+      const SCORE_SMOOTHING = 0.35;
+      const BASELINE_ADAPT = 0.015;
+
+      function $(id) { return document.getElementById(id); }
+      function fmt(n) { return (n ?? 0).toFixed(3); }
+      function clamp01(n) { return Math.max(0, Math.min(1, n)); }
+      function setVideoStatus(message) {
+        const el = $("videoStatus");
+        if (el) el.textContent = message || "";
+      }
+      function updateUi(reading, faceVisible) {
+        const score = reading ? reading.score : 0;
+        const breakdown = reading ? reading.breakdown : null;
+        const scoreEl = $("score");
+        const bar = $("bar");
+        const status = $("status");
+        const pct = Math.max(0, Math.min(1, score)) * 100;
+        if (scoreEl) scoreEl.textContent = fmt(score);
+        if (bar) bar.style.width = pct.toFixed(1) + "%";
+        if (status) {
+          if (!faceVisible) {
+            status.textContent = "no face";
+            status.className = "val status-muted";
+          } else if (reading && !reading.calibrated) {
+            status.textContent = "calibrating";
+            status.className = "val status-muted";
+          } else if (score >= STRUGGLE_THRESHOLD) {
+            status.textContent = "struggling";
+            status.className = "val status-warn";
+          } else {
+            status.textContent = "calm";
+            status.className = "val status-ok";
+          }
+        }
+        if (breakdown) {
+          $("bd").textContent = fmt(breakdown.browDown);
+          $("bi").textContent = fmt(breakdown.browInnerUp);
+          $("mf").textContent = fmt(breakdown.mouthFrown);
+          $("es").textContent = fmt(breakdown.eyeSquint);
+        }
+        if (reading) {
+          $("raw").textContent = fmt(reading.rawScore);
+          $("delta").textContent = fmt(reading.maxDelta);
+          $("blend").textContent = fmt(reading.blendshapeScore);
+          $("geo").textContent = reading.landmark ? fmt(reading.landmark.score) : "—";
+          $("base").textContent = fmt(reading.baselineScore);
+          $("cal").textContent = reading.calibrated ? "done" : `${Math.round(reading.calibrationProgress * 100)}%`;
+        }
+        $("fv").textContent = faceVisible ? "yes" : "no";
+        frameCount++;
+        const now = performance.now();
+        if (now - lastFpsAt >= 1000) {
+          $("fps").textContent = (frameCount / ((now - lastFpsAt) / 1000)).toFixed(1);
+          frameCount = 0;
+          lastFpsAt = now;
+        }
+      }
+
+      function copyBreakdown(values) {
+        return {
+          browDown: values.browDown,
+          browInnerUp: values.browInnerUp,
+          mouthFrown: values.mouthFrown,
+          eyeSquint: values.eyeSquint
+        };
+      }
+
+      function rawStruggleScore(values) {
+        return Math.max(values.browDown, values.mouthFrown, values.eyeSquint * 0.9) + values.browInnerUp * 0.5;
+      }
+
+      function averageBreakdowns(samples) {
+        const total = { browDown: 0, browInnerUp: 0, mouthFrown: 0, eyeSquint: 0 };
+        samples.forEach((sample) => {
+          total.browDown += sample.browDown;
+          total.browInnerUp += sample.browInnerUp;
+          total.mouthFrown += sample.mouthFrown;
+          total.eyeSquint += sample.eyeSquint;
+        });
+        const count = Math.max(1, samples.length);
+        return {
+          browDown: total.browDown / count,
+          browInnerUp: total.browInnerUp / count,
+          mouthFrown: total.mouthFrown / count,
+          eyeSquint: total.eyeSquint / count
+        };
+      }
+
+      const calibrationSamples = [];
+      const landmarkCalibrationSamples = [];
+
+      function normalizedDelta(value, base, deadband, fullScale) {
+        return clamp01((value - base - deadband) / fullScale);
+      }
+
+      function adaptBaseline(values) {
+        if (!baseline) return;
+        baseline.browDown += (values.browDown - baseline.browDown) * BASELINE_ADAPT;
+        baseline.browInnerUp += (values.browInnerUp - baseline.browInnerUp) * BASELINE_ADAPT;
+        baseline.mouthFrown += (values.mouthFrown - baseline.mouthFrown) * BASELINE_ADAPT;
+        baseline.eyeSquint += (values.eyeSquint - baseline.eyeSquint) * BASELINE_ADAPT;
+      }
+
+      function averageLandmarks(samples) {
+        const total = {
+          innerBrowDistance: 0,
+          browEyeGap: 0,
+          browEyeGapLeft: 0,
+          browEyeGapRight: 0,
+          asymmetry: 0,
+          faceScale: 0
+        };
+        samples.forEach((sample) => {
+          total.innerBrowDistance += sample.innerBrowDistance;
+          total.browEyeGap += sample.browEyeGap;
+          total.browEyeGapLeft += sample.browEyeGapLeft;
+          total.browEyeGapRight += sample.browEyeGapRight;
+          total.asymmetry += sample.asymmetry;
+          total.faceScale += sample.faceScale;
+        });
+        const count = Math.max(1, samples.length);
+        return {
+          innerBrowDistance: total.innerBrowDistance / count,
+          browEyeGap: total.browEyeGap / count,
+          browEyeGapLeft: total.browEyeGapLeft / count,
+          browEyeGapRight: total.browEyeGapRight / count,
+          asymmetry: total.asymmetry / count,
+          faceScale: total.faceScale / count
+        };
+      }
+
+      function adaptLandmarkBaseline(geometry) {
+        if (!landmarkBaseline || !geometry) return;
+        landmarkBaseline.innerBrowDistance += (geometry.innerBrowDistance - landmarkBaseline.innerBrowDistance) * BASELINE_ADAPT;
+        landmarkBaseline.browEyeGap += (geometry.browEyeGap - landmarkBaseline.browEyeGap) * BASELINE_ADAPT;
+        landmarkBaseline.browEyeGapLeft += (geometry.browEyeGapLeft - landmarkBaseline.browEyeGapLeft) * BASELINE_ADAPT;
+        landmarkBaseline.browEyeGapRight += (geometry.browEyeGapRight - landmarkBaseline.browEyeGapRight) * BASELINE_ADAPT;
+        landmarkBaseline.asymmetry += (geometry.asymmetry - landmarkBaseline.asymmetry) * BASELINE_ADAPT;
+        landmarkBaseline.faceScale += (geometry.faceScale - landmarkBaseline.faceScale) * BASELINE_ADAPT;
+      }
+
+      function scoreFromBreakdown(values) {
+        const now = performance.now();
+        if (!baseline) {
+          baseline = copyBreakdown(values);
+          calibrationStartAt = now;
+        }
+
+        const calibrationElapsed = now - calibrationStartAt;
+        if (calibrationElapsed < CALIBRATION_MS) {
+          calibrationSamples.push(copyBreakdown(values));
+          baseline = averageBreakdowns(calibrationSamples);
+          smoothedScore = 0;
+          return {
+            score: 0,
+            blendshapeScore: 0,
+            rawScore: rawStruggleScore(values),
+            baselineScore: rawStruggleScore(baseline),
+            maxDelta: 0,
+            calibrated: false,
+            calibrationProgress: clamp01(calibrationElapsed / CALIBRATION_MS),
+            breakdown: values
+          };
+        }
+
+        const deltas = {
+          browDown: normalizedDelta(values.browDown, baseline.browDown, 0.06, 0.22),
+          browInnerUp: normalizedDelta(values.browInnerUp, baseline.browInnerUp, 0.08, 0.30),
+          mouthFrown: normalizedDelta(values.mouthFrown, baseline.mouthFrown, 0.05, 0.22),
+          eyeSquint: normalizedDelta(values.eyeSquint, baseline.eyeSquint, 0.07, 0.28)
+        };
+        const expressionScore = Math.max(
+          deltas.browDown * 0.95,
+          deltas.mouthFrown * 0.9,
+          deltas.eyeSquint * 0.65,
+          deltas.browInnerUp * 0.55
+        );
+        const combinedEvidence = clamp01(
+          (deltas.browDown + deltas.mouthFrown + deltas.eyeSquint + deltas.browInnerUp * 0.6) / 2.4
+        );
+        const instantScore = clamp01(expressionScore * 0.8 + combinedEvidence * 0.2);
+        smoothedScore += (instantScore - smoothedScore) * SCORE_SMOOTHING;
+
+        if (smoothedScore < STRUGGLE_THRESHOLD * 0.55) {
+          adaptBaseline(values);
+        }
+
+        return {
+          score: smoothedScore,
+          blendshapeScore: smoothedScore,
+          rawScore: rawStruggleScore(values),
+          baselineScore: rawStruggleScore(baseline),
+          maxDelta: Math.max(deltas.browDown, deltas.browInnerUp, deltas.mouthFrown, deltas.eyeSquint),
+          calibrated: true,
+          calibrationProgress: 1,
+          breakdown: values
+        };
+      }
+
+      function pointFromLandmark(landmarks, index) {
+        const point = landmarks[index];
+        if (!point) return null;
+        return {
+          x: point.x * (videoEl?.videoWidth || 1),
+          y: point.y * (videoEl?.videoHeight || 1)
+        };
+      }
+
+      function avgPoint(points) {
+        const valid = points.filter(Boolean);
+        if (valid.length === 0) return null;
+        return {
+          x: valid.reduce((acc, p) => acc + p.x, 0) / valid.length,
+          y: valid.reduce((acc, p) => acc + p.y, 0) / valid.length
+        };
+      }
+
+      function rotatePoint(point, center, angle) {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const x = point.x - center.x;
+        const y = point.y - center.y;
+        return {
+          x: x * cos - y * sin,
+          y: x * sin + y * cos
+        };
+      }
+
+      function dist(a, b) {
+        return Math.hypot(a.x - b.x, a.y - b.y);
+      }
+
+      function geometryFromLandmarks(landmarks) {
+        if (!landmarks || landmarks.length === 0) return null;
+        const leftEyeCenter = avgPoint([33, 133, 159, 145].map((i) => pointFromLandmark(landmarks, i)));
+        const rightEyeCenter = avgPoint([263, 362, 386, 374].map((i) => pointFromLandmark(landmarks, i)));
+        if (!leftEyeCenter || !rightEyeCenter) return null;
+
+        const eyeCenter = {
+          x: (leftEyeCenter.x + rightEyeCenter.x) / 2,
+          y: (leftEyeCenter.y + rightEyeCenter.y) / 2
+        };
+        const roll = Math.atan2(rightEyeCenter.y - leftEyeCenter.y, rightEyeCenter.x - leftEyeCenter.x);
+        const scale = dist(leftEyeCenter, rightEyeCenter);
+        if (!Number.isFinite(scale) || scale < 20) return null;
+
+        function cluster(indices) {
+          const points = indices
+            .map((i) => pointFromLandmark(landmarks, i))
+            .filter(Boolean)
+            .map((p) => rotatePoint(p, eyeCenter, -roll));
+          return avgPoint(points);
+        }
+
+        const leftInnerBrow = cluster([55, 65, 52, 53]);
+        const rightInnerBrow = cluster([285, 295, 282, 283]);
+        const leftBrow = cluster([70, 63, 105, 66, 107, 55, 65, 52, 53, 46]);
+        const rightBrow = cluster([300, 293, 334, 296, 336, 285, 295, 282, 283, 276]);
+        const leftUpperEye = cluster([159, 158, 157, 160]);
+        const rightUpperEye = cluster([386, 385, 384, 387]);
+        if (!leftInnerBrow || !rightInnerBrow || !leftBrow || !rightBrow || !leftUpperEye || !rightUpperEye) {
+          return null;
+        }
+
+        const leftGap = (leftUpperEye.y - leftBrow.y) / scale;
+        const rightGap = (rightUpperEye.y - rightBrow.y) / scale;
+        return {
+          innerBrowDistance: Math.abs(rightInnerBrow.x - leftInnerBrow.x) / scale,
+          browEyeGap: (leftGap + rightGap) / 2,
+          browEyeGapLeft: leftGap,
+          browEyeGapRight: rightGap,
+          asymmetry: Math.abs(leftGap - rightGap),
+          faceScale: scale,
+          rollDeg: Math.abs((roll * 180) / Math.PI)
+        };
+      }
+
+      function scoreLandmarkGeometry(geometry, calibrated) {
+        if (!geometry) {
+          return null;
+        }
+        if (!landmarkBaseline) {
+          landmarkBaseline = { ...geometry };
+        }
+        if (!calibrated) {
+          landmarkCalibrationSamples.push({ ...geometry });
+          landmarkBaseline = averageLandmarks(landmarkCalibrationSamples);
+          smoothedLandmarkScore = 0;
+          return {
+            score: 0,
+            compression: 0,
+            browDrop: 0,
+            browRaise: 0,
+            poseOk: true,
+            geometry
+          };
+        }
+
+        const compression = normalizedDelta(landmarkBaseline.innerBrowDistance - geometry.innerBrowDistance, 0, 0.015, 0.07);
+        const browDrop = normalizedDelta(landmarkBaseline.browEyeGap - geometry.browEyeGap, 0, 0.018, 0.07);
+        const browRaise = normalizedDelta(geometry.browEyeGap - landmarkBaseline.browEyeGap, 0, 0.025, 0.09);
+        const asymmetryPenalty = clamp01((geometry.asymmetry - landmarkBaseline.asymmetry - 0.04) / 0.12) * 0.25;
+        const poseOk = geometry.rollDeg <= 25 && geometry.faceScale >= landmarkBaseline.faceScale * 0.55;
+        const instant = poseOk
+          ? clamp01(compression * 0.58 + browDrop * 0.27 + browRaise * 0.15 - asymmetryPenalty)
+          : 0;
+        smoothedLandmarkScore += (instant - smoothedLandmarkScore) * SCORE_SMOOTHING;
+        if (smoothedLandmarkScore < STRUGGLE_THRESHOLD * 0.5) {
+          adaptLandmarkBaseline(geometry);
+        }
+        return {
+          score: smoothedLandmarkScore,
+          compression,
+          browDrop,
+          browRaise,
+          poseOk,
+          geometry
+        };
+      }
+
+      function fuseReading(blendReading, landmark) {
+        if (!landmark) {
+          return {
+            ...blendReading,
+            fusedScore: blendReading.score,
+            landmark: null
+          };
+        }
+        const fusedScore = landmark.poseOk
+          ? clamp01(blendReading.blendshapeScore * 0.65 + landmark.score * 0.35)
+          : blendReading.blendshapeScore;
+        return {
+          ...blendReading,
+          score: fusedScore,
+          fusedScore,
+          landmark
+        };
+      }
 
       function getBlend(categories, name) {
         const found = categories.find((c) => c.categoryName === name);
         return found ? found.score : 0;
       }
 
-      function struggleScore(categories) {
-        const browDown =
-          (getBlend(categories, "browDownLeft") +
-            getBlend(categories, "browDownRight")) /
-          2;
-        const browInnerUp = getBlend(categories, "browInnerUp");
-        const mouthFrown =
-          (getBlend(categories, "mouthFrownLeft") +
-            getBlend(categories, "mouthFrownRight")) /
-          2;
-        const eyeSquint =
-          (getBlend(categories, "eyeSquintLeft") +
-            getBlend(categories, "eyeSquintRight")) /
-          2;
-        return (
-          Math.max(browDown, mouthFrown, eyeSquint * 0.9) + browInnerUp * 0.5
-        );
-      }
-
-      function reportFace(score, faceVisible) {
+      function reportFace(reading, faceVisible) {
         const now = Date.now();
+        const score = reading ? reading.score : 0;
         if (now - lastLogAt > LOG_INTERVAL_MS) {
           lastLogAt = now;
           console.log(
-            `[face] visible=${faceVisible} struggle=${score.toFixed(3)}`
+            `[face] visible=${faceVisible} struggle=${score.toFixed(3)} ` +
+              `raw=${reading ? reading.rawScore.toFixed(3) : "0.000"} ` +
+              `blend=${reading ? reading.blendshapeScore.toFixed(3) : "0.000"} ` +
+              `geo=${reading && reading.landmark ? reading.landmark.score.toFixed(3) : "0.000"} ` +
+              `baseline=${reading ? reading.baselineScore.toFixed(3) : "0.000"} ` +
+              `calibrated=${reading ? reading.calibrated : false}`
           );
         }
         if (now - lastReportAt > REPORT_INTERVAL_MS) {
           lastReportAt = now;
           if (window.clawSense && window.clawSense.faceSample) {
-            window.clawSense.faceSample({ score, faceVisible }).catch(() => {});
+            window.clawSense.faceSample({
+              score,
+              faceVisible,
+              rawScore: reading ? reading.rawScore : 0,
+              baselineScore: reading ? reading.baselineScore : 0,
+              maxDelta: reading ? reading.maxDelta : 0,
+              calibrated: reading ? reading.calibrated : false,
+              blendshapeScore: reading ? reading.blendshapeScore : 0,
+              landmarkScore: reading && reading.landmark ? reading.landmark.score : 0,
+              fusedScore: reading ? reading.fusedScore : 0,
+              landmark: reading ? reading.landmark : null,
+              breakdown: reading ? reading.breakdown : null
+            }).catch(() => {});
           }
         }
       }
@@ -81,16 +474,26 @@
         const fileset = await FilesetResolver.forVisionTasks(
           "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.20/wasm"
         );
-        return FaceLandmarker.createFromOptions(fileset, {
-          baseOptions: {
-            modelAssetPath:
-              "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
-            delegate: "GPU"
-          },
+        const options = {
           outputFaceBlendshapes: true,
+          outputFacialTransformationMatrixes: true,
           runningMode: "VIDEO",
           numFaces: 1
-        });
+        };
+        const modelAssetPath =
+          "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task";
+        try {
+          return await FaceLandmarker.createFromOptions(fileset, {
+            ...options,
+            baseOptions: { modelAssetPath, delegate: "GPU" }
+          });
+        } catch (err) {
+          console.warn("[face] GPU delegate failed, falling back to CPU:", err);
+          return FaceLandmarker.createFromOptions(fileset, {
+            ...options,
+            baseOptions: { modelAssetPath, delegate: "CPU" }
+          });
+        }
       }
 
       async function logDevices() {
@@ -110,18 +513,64 @@
       }
 
       async function startCamera() {
-        await logDevices();
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: false
-        });
+        setVideoStatus("requesting camera...");
+        const devices = await logDevices();
+        const preferred = devices.find((d) => /facetime|built.?in|hd/i.test(d.label)) ?? devices[0];
+        const attempts = [
+          preferred
+            ? {
+                label: `device ${preferred.label || preferred.deviceId.slice(0, 8)}`,
+                constraints: {
+                  video: {
+                    deviceId: { exact: preferred.deviceId },
+                    width: { ideal: 640 },
+                    height: { ideal: 480 },
+                    frameRate: { ideal: 15, max: 30 }
+                  },
+                  audio: false
+                }
+              }
+            : null,
+          {
+            label: "default 640x480",
+            constraints: {
+              video: {
+                width: { ideal: 640 },
+                height: { ideal: 480 },
+                frameRate: { ideal: 15, max: 30 }
+              },
+              audio: false
+            }
+          },
+          { label: "default video", constraints: { video: true, audio: false } }
+        ].filter(Boolean);
+
+        let lastError = null;
+        let stream = null;
+        for (const attempt of attempts) {
+          try {
+            setVideoStatus(`opening camera: ${attempt.label}`);
+            stream = await navigator.mediaDevices.getUserMedia(attempt.constraints);
+            break;
+          } catch (err) {
+            lastError = err;
+            console.warn(`[face] camera attempt failed (${attempt.label}):`, err);
+          }
+        }
+        if (!stream) {
+          throw lastError || new Error("No camera stream available");
+        }
+
         videoEl.srcObject = stream;
+        videoEl.muted = true;
+        videoEl.playsInline = true;
         await videoEl.play();
         const settings = stream.getVideoTracks()[0]?.getSettings?.() ?? {};
         console.log(
           `[face] camera ready: ${settings.width || "?"}x${settings.height || "?"} ` +
             `device=${settings.deviceId ? settings.deviceId.slice(0, 8) : "?"}`
         );
+        setVideoStatus("");
         await logDevices();
         return stream;
       }
@@ -130,10 +579,12 @@
         videoEl = document.getElementById("video");
 
         try {
+          setVideoStatus("loading face model...");
           faceLandmarker = await loadFaceLandmarker();
           console.log("[face] FaceLandmarker loaded");
         } catch (err) {
           console.error("[face] FaceLandmarker load failed:", err);
+          setVideoStatus(`face model failed: ${err && err.message ? err.message : String(err)}`);
           return;
         }
 
@@ -144,11 +595,25 @@
           const name = err && err.name ? err.name : "Unknown";
           const msg = err && err.message ? err.message : String(err);
           console.error(`[face] camera unavailable: ${name} — ${msg}`);
+          const permissionHint =
+            name === "NotAllowedError"
+              ? "\nSystem Settings > Privacy & Security > Camera > ClawSense を ON にして再起動"
+              : "";
+          setVideoStatus(`camera unavailable: ${name}\n${msg}${permissionHint}`);
           return;
         }
 
         const intervalMs = Math.round(1000 / TARGET_FPS);
         setInterval(loop, intervalMs);
+      }
+
+      function breakdownFrom(categories) {
+        return {
+          browDown: (getBlend(categories, "browDownLeft") + getBlend(categories, "browDownRight")) / 2,
+          browInnerUp: getBlend(categories, "browInnerUp"),
+          mouthFrown: (getBlend(categories, "mouthFrownLeft") + getBlend(categories, "mouthFrownRight")) / 2,
+          eyeSquint: (getBlend(categories, "eyeSquintLeft") + getBlend(categories, "eyeSquintRight")) / 2,
+        };
       }
 
       function loop() {
@@ -158,13 +623,18 @@
         try {
           const result = faceLandmarker.detectForVideo(videoEl, performance.now());
           const blendshapes = result.faceBlendshapes ?? [];
-          if (blendshapes.length === 0) {
-            reportFace(0, false);
+          const landmarks = result.faceLandmarks ?? [];
+          if (blendshapes.length === 0 || landmarks.length === 0) {
+            reportFace(null, false);
+            updateUi(null, false);
             return;
           }
           const categories = blendshapes[0].categories ?? [];
-          const score = struggleScore(categories);
-          reportFace(score, true);
+          const blendReading = scoreFromBreakdown(breakdownFrom(categories));
+          const landmark = scoreLandmarkGeometry(geometryFromLandmarks(landmarks[0]), blendReading.calibrated);
+          const reading = fuseReading(blendReading, landmark);
+          reportFace(reading, true);
+          updateUi(reading, true);
         } catch (err) {
           console.error("[face] frame error:", err);
         }

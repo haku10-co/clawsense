@@ -1,8 +1,8 @@
 import { clipboard } from "electron";
 
-export function copyResumeCommand(sessionId: string): string {
+export function copyResumeCommand(sessionId: string, claudeBin = "claude"): string {
   const safe = shellQuote(sessionId);
-  const command = `claude --resume ${safe}`;
+  const command = `${shellQuote(claudeBin)} --resume ${safe}`;
   clipboard.writeText(command);
   return command;
 }

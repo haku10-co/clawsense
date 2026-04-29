@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type { FeedbackValue, ResultPayload, SuggestionPayload } from "./types";
+import type { FaceSample } from "./sensors/face-watcher";
 
 type PromptsBundle = { picker: string; direction: string };
 
@@ -49,7 +50,7 @@ contextBridge.exposeInMainWorld("clawSense", {
   openSettings(): Promise<void> {
     return ipcRenderer.invoke("settings:open");
   },
-  faceSample(sample: { score: number; faceVisible: boolean }): Promise<void> {
+  faceSample(sample: FaceSample): Promise<void> {
     return ipcRenderer.invoke("face:sample", sample);
   }
 });

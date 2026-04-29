@@ -13,12 +13,15 @@ export type HistoricalSession = {
   updatedAt: string;
 };
 
-const FILE = path.join(app.getPath("userData"), "sessions.json");
 const MAX_HISTORY = 100;
+
+function filePath(): string {
+  return path.join(app.getPath("userData"), "sessions.json");
+}
 
 async function readAll(): Promise<HistoricalSession[]> {
   try {
-    const text = await fs.readFile(FILE, "utf8");
+    const text = await fs.readFile(filePath(), "utf8");
     const parsed = JSON.parse(text);
     if (Array.isArray(parsed)) {
       return parsed as HistoricalSession[];
@@ -30,8 +33,9 @@ async function readAll(): Promise<HistoricalSession[]> {
 }
 
 async function writeAll(items: HistoricalSession[]): Promise<void> {
-  await fs.mkdir(path.dirname(FILE), { recursive: true });
-  await fs.writeFile(FILE, JSON.stringify(items, null, 2), "utf8");
+  const file = filePath();
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, JSON.stringify(items, null, 2), "utf8");
 }
 
 export async function listRecent(limit: number = 10): Promise<HistoricalSession[]> {
