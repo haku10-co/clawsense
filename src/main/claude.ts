@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { cliEnv } from "./cli-env";
 import { getClaudeBinaryOrThrow } from "./claude-binary";
 import { readPrompt, render } from "./prompts";
 import type { ActionKind, SuggestionAction, SuggestionPayload, Turn } from "./types";
@@ -29,7 +30,8 @@ async function runClaude(
     let settled = false;
 
     const proc = spawn(binary, args, {
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      env: cliEnv()
     });
 
     const onAbort = (): void => {
@@ -99,6 +101,8 @@ export type AskClaudeResult = Pick<
 
 type ClaudeJson = {
   actions?: unknown;
+  is_error?: unknown;
+  result?: unknown;
 };
 
 function normalizeKind(value: unknown): ActionKind {
@@ -173,7 +177,7 @@ function extractJsonObject(rawText: string): ClaudeJson | null {
 
 function fallbackActions(rawText: string): SuggestionAction[] {
   const trimmed = rawText.trim();
-  if (!trimmed) {
+  if (!trimmed || isClaudeExecutionError(trimmed)) {
     return [];
   }
 
@@ -189,6 +193,9 @@ function fallbackActions(rawText: string): SuggestionAction[] {
 function parseClaudeOutput(rawText: string): SuggestionAction[] {
   const json = extractJsonObject(rawText);
   if (json) {
+    if (json.is_error === true) {
+      throw new Error(formatClaudeError(rawText));
+    }
     const actions = normalizeActions(json.actions);
     if (actions.length > 0) {
       return actions;
@@ -196,6 +203,27 @@ function parseClaudeOutput(rawText: string): SuggestionAction[] {
   }
 
   return fallbackActions(rawText);
+}
+
+function isClaudeExecutionError(rawText: string): boolean {
+  const normalized = rawText.trim().toLowerCase();
+  return (
+    normalized === "execution error" ||
+    normalized.startsWith("execution error\n") ||
+    normalized.startsWith("execution error:") ||
+    normalized.startsWith("error: execution error")
+  );
+}
+
+function formatClaudeError(rawText: string): string {
+  const trimmed = rawText.trim();
+  if (isClaudeExecutionError(trimmed)) {
+    return (
+      "Claude CLI が Execution error を返しました。Claude Code CLI のログイン状態と、" +
+      "画面収録/カメラ権限を確認してください。"
+    );
+  }
+  return `Claude CLI returned an error: ${trimmed.slice(0, 500)}`;
 }
 
 async function buildPrompt(input: AskClaudeInput): Promise<string> {
@@ -213,7 +241,11 @@ export async function askClaude(input: AskClaudeInput): Promise<AskClaudeResult>
     "-p",
     prompt,
     "--dangerously-skip-permissions",
-    "--allowed-tools",
+    "--no-session-persistence",
+    "--strict-mcp-config",
+    "--mcp-config",
+    "{\"mcpServers\":{}}",
+    "--tools",
     "Read"
   ];
 
@@ -224,9 +256,18 @@ export async function askClaude(input: AskClaudeInput): Promise<AskClaudeResult>
     throw new Error("Claude CLI returned no output.");
   }
 
+  if (isClaudeExecutionError(rawText)) {
+    throw new Error(formatClaudeError(rawText));
+  }
+
+  const actions = parseClaudeOutput(rawText);
+  if (actions.length === 0) {
+    throw new Error(`Claude CLI returned no usable actions: ${rawText.slice(0, 500)}`);
+  }
+
   return {
     triggerId: input.triggerId,
-    actions: parseClaudeOutput(rawText),
+    actions,
     rawText
   };
 }
@@ -301,6 +342,9 @@ export async function askDirection(input: AskDirectionInput): Promise<string> {
   const raw = stdout.trim() || stderr.trim();
   if (!raw) {
     throw new Error("Claude CLI returned no output.");
+  }
+  if (isClaudeExecutionError(raw)) {
+    throw new Error(formatClaudeError(raw));
   }
 
   return parseJsonResult(raw);

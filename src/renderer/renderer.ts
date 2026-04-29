@@ -14,6 +14,7 @@ type SuggestionPayload = {
   latencyMs: number;
   screenshotPath: string;
   pending: boolean;
+  compact?: boolean;
 };
 
 type Turn = { role: "user" | "assistant"; content: string };
@@ -164,6 +165,7 @@ function initSuggestion(): void {
     suggestion = payload;
     setState("picker");
     document.body.dataset.pending = payload.pending ? "true" : "false";
+    document.body.dataset.compact = payload.compact ? "true" : "false";
     setText("headline", payload.headline || "提案");
     setText("hint", payload.hint || "");
 
@@ -185,6 +187,8 @@ function initSuggestion(): void {
   function renderResult(payload: ResultPayload): void {
     result = payload;
     setState("result");
+    document.body.dataset.compact = "false";
+    document.body.dataset.pending = payload.pending ? "true" : "false";
     selectedLabelEl.textContent = payload.selectedLabel;
     renderThread(thread, payload.turns, payload.pending);
 

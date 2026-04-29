@@ -1,3 +1,4 @@
+import type { FaceSample } from "../main/sensors/face-watcher";
 import type { FeedbackValue, ResultPayload, SuggestionPayload } from "../main/types";
 
 type PromptsBundle = { picker: string; direction: string };
@@ -25,6 +26,7 @@ declare global {
       savePrompts(bundle: PromptsBundle): Promise<void>;
       resetPrompts(): Promise<PromptsBundle>;
       openSettings(): Promise<void>;
+      faceSample(sample: FaceSample): Promise<void>;
     };
   }
 }

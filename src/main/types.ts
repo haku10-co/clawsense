@@ -1,4 +1,4 @@
-export type TriggerSource = "menu" | "hotkey" | "button";
+export type TriggerSource = "menu" | "hotkey" | "button" | "looks-stuck";
 
 export type ActionKind = "terminal" | "doc" | "code" | "search" | "general";
 
@@ -17,6 +17,7 @@ export type SuggestionPayload = {
   latencyMs: number;
   screenshotPath: string;
   pending: boolean;
+  compact?: boolean;
 };
 
 export type Turn = {

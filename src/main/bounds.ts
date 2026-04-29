@@ -9,11 +9,13 @@ export type WindowBounds = {
   height: number;
 };
 
-const FILE = path.join(app.getPath("userData"), "window-bounds.json");
+function filePath(): string {
+  return path.join(app.getPath("userData"), "window-bounds.json");
+}
 
 export async function loadBounds(): Promise<WindowBounds | null> {
   try {
-    const text = await fs.readFile(FILE, "utf8");
+    const text = await fs.readFile(filePath(), "utf8");
     const parsed = JSON.parse(text) as Partial<WindowBounds>;
     if (
       typeof parsed.x === "number" &&
@@ -31,8 +33,9 @@ export async function loadBounds(): Promise<WindowBounds | null> {
 
 export async function saveBounds(bounds: WindowBounds): Promise<void> {
   try {
-    await fs.mkdir(path.dirname(FILE), { recursive: true });
-    await fs.writeFile(FILE, JSON.stringify(bounds), "utf8");
+    const file = filePath();
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify(bounds), "utf8");
   } catch {
     /* ignore */
   }

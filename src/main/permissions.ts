@@ -9,6 +9,8 @@ export type ScreenAccessStatus =
 
 const SETTINGS_URL =
   "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
+const CAMERA_SETTINGS_URL =
+  "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera";
 
 export function getScreenAccessStatus(): ScreenAccessStatus {
   if (process.platform !== "darwin") {
@@ -29,4 +31,8 @@ export async function triggerScreenAccessPrompt(): Promise<void> {
 
 export function openScreenRecordingSettings(): void {
   void shell.openExternal(SETTINGS_URL);
+}
+
+export function openCameraSettings(): void {
+  void shell.openExternal(CAMERA_SETTINGS_URL);
 }

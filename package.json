@@ -31,8 +31,13 @@
     "build": "tsc",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
-    "pack": "npm run build && electron-builder --mac --dir",
-    "dist": "npm run build && electron-builder --mac"
+    "pack": "npm run build && electron-builder --mac dir",
+    "pack:adhoc": "npm run build && electron-builder --mac dir -c.mac.identity=-",
+    "dist": "npm run build && electron-builder --mac",
+    "verify:mac": "codesign --verify --deep --strict --verbose=2 release/mac-arm64/ClawSense.app",
+    "verify:mac:release": "npm run verify:mac && spctl --assess --type execute --verbose=4 release/mac-arm64/ClawSense.app",
+    "restart:mac": "pkill -TERM -f 'ClawSense.app/Contents/MacOS/ClawSense' || true; sleep 1; pkill -9 -f 'ClawSense.app/Contents/MacOS/ClawSense' || true; open -n './release/mac-arm64/ClawSense.app'",
+    "dev:restart": "npm run pack && npm run verify:mac && npm run restart:mac"
   },
   "build": {
     "appId": "com.clawsense.app",
@@ -40,6 +45,7 @@
     "directories": {
       "output": "release"
     },
+    "afterPack": "build/after-pack.cjs",
     "files": [
       "dist/**/*",
       "src/renderer/*.html",
@@ -50,6 +56,10 @@
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
+      "executableName": "ClawSense",
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
       "target": [
         { "target": "dmg", "arch": ["arm64", "x64"] },
         { "target": "zip", "arch": ["arm64", "x64"] }

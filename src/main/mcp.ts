@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { cliEnv } from "./cli-env";
 import { findClaudeBinary } from "./claude-binary";
 
 export type McpStatus = "connected" | "needs-auth" | "failed";
@@ -24,7 +25,8 @@ async function runMcpList(timeoutMs: number): Promise<string> {
     let settled = false;
 
     const proc = spawn(binary, ["mcp", "list"], {
-      stdio: ["ignore", "pipe", "pipe"]
+      stdio: ["ignore", "pipe", "pipe"],
+      env: cliEnv()
     });
 
     const timer = setTimeout(() => {
