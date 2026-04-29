@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { cliEnv } from "./cli-env";
 import { getClaudeBinaryOrThrow } from "./claude-binary";
 import { readPrompt, render } from "./prompts";
-import type { ActionKind, SuggestionAction, SuggestionPayload, Turn } from "./types";
+import type { ActionKind, OcrResult, SuggestionAction, SuggestionPayload, Turn } from "./types";
 
 const VALID_KINDS: readonly ActionKind[] = ["terminal", "doc", "code", "search", "general"];
 
@@ -274,6 +274,7 @@ export async function askClaude(input: AskClaudeInput): Promise<AskClaudeResult>
 
 export type AskDirectionInput = {
   screenshotPath: string;
+  ocr?: OcrResult | null;
   selectedLabel: string;
   turns: Turn[];
   sessionId: string;
@@ -295,6 +296,22 @@ function parseJsonResult(raw: string): string {
     // Not JSON, fall through.
   }
   return raw.trim();
+}
+
+function renderOcrBlock(ocr?: OcrResult | null): string {
+  if (!ocr?.text.trim()) {
+    return "";
+  }
+  const confidence =
+    typeof ocr.confidence === "number" ? ` confidence=${ocr.confidence.toFixed(2)}` : "";
+  const truncated = ocr.truncated ? " truncated=true" : "";
+  return [
+    "",
+    "画面OCRテキスト:",
+    `engine=${ocr.engine}${confidence} elapsed=${ocr.elapsedMs}ms${truncated}`,
+    "注: OCRは不完全な可能性があります。正確な判断にはスクリーンショットも参照してください。",
+    ocr.text
+  ].join("\n");
 }
 
 async function buildDirectionPrompt(input: AskDirectionInput): Promise<string> {
@@ -319,6 +336,7 @@ async function buildDirectionPrompt(input: AskDirectionInput): Promise<string> {
   return render(template, {
     selectedLabel: input.selectedLabel,
     screenshotPath: input.screenshotPath,
+    ocrBlock: renderOcrBlock(input.ocr),
     transcript
   });
 }

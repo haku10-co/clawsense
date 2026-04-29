@@ -11,6 +11,7 @@ import {
 } from "./session";
 import type {
   FeedbackValue,
+  OcrResult,
   ResultPayload,
   SuggestionPayload,
   TriggerSource
@@ -19,6 +20,7 @@ import type {
 export type IpcDeps = {
   getSuggestionWindow: () => BrowserWindow | null;
   getLastSuggestion: () => SuggestionPayload | null;
+  getOcrForTrigger: (triggerId: string) => OcrResult | null;
   sendResult: (payload: ResultPayload) => void;
   sendPendingSuggestion: () => void;
   hideSuggestionWindow: () => void;
@@ -64,7 +66,9 @@ export function registerIpcHandlers(deps: IpcDeps): void {
         const trimmed = customLabel?.trim();
         const effective =
           trimmed && trimmed !== action.label ? { ...action, label: trimmed } : action;
-        deps.sendResult(startSession(triggerId, last.screenshotPath, effective));
+        deps.sendResult(
+          startSession(triggerId, last.screenshotPath, effective, deps.getOcrForTrigger(triggerId))
+        );
         const reply = await fetchAssistantTurn();
         deps.sendResult(reply);
         deps.onSessionUpdated?.();

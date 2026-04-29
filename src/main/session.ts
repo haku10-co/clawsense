@@ -2,11 +2,12 @@ import { randomUUID } from "node:crypto";
 import { askDirection } from "./claude";
 import type { HistoricalSession } from "./history";
 import { openInPreferredTerminal } from "./terminal";
-import type { ResultPayload, SuggestionAction, Turn } from "./types";
+import type { OcrResult, ResultPayload, SuggestionAction, Turn } from "./types";
 
 type Session = {
   triggerId: string;
   screenshotPath: string;
+  ocr?: OcrResult | null;
   selectedLabel: string;
   turns: Turn[];
   sessionId: string;
@@ -40,11 +41,13 @@ export function clearSession(): void {
 export function startSession(
   triggerId: string,
   screenshotPath: string,
-  action: SuggestionAction
+  action: SuggestionAction,
+  ocr?: OcrResult | null
 ): ResultPayload {
   current = {
     triggerId,
     screenshotPath,
+    ocr,
     selectedLabel: action.label,
     turns: [{ role: "user", content: action.label }],
     sessionId: randomUUID(),
@@ -77,6 +80,7 @@ export async function fetchAssistantTurn(): Promise<ResultPayload> {
   try {
     const reply = await askDirection({
       screenshotPath: current.screenshotPath,
+      ocr: current.ocr,
       selectedLabel: current.selectedLabel,
       turns: current.turns,
       sessionId: current.sessionId,
@@ -128,6 +132,7 @@ export function restoreSession(historical: HistoricalSession): ResultPayload {
   current = {
     triggerId: historical.triggerId,
     screenshotPath: historical.screenshotPath,
+    ocr: null,
     selectedLabel: historical.selectedLabel,
     turns: historical.turns.map((turn) => ({ ...turn })),
     sessionId: historical.sessionId,

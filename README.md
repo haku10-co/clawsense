@@ -31,6 +31,7 @@ It is most useful when you:
 - **Pick one → execute** — Claude Code uses your live MCP integrations to actually do the thing (add a calendar event, draft an email, edit a file, file a ticket)
 - **Continue in chat** — keep iterating in the popover, or hand off to your terminal Claude Code session via `claude --resume <id>`
 - **Sensors** — knows your active app and which MCPs are connected, feeds that as context
+- **Local OCR** — extracts visible text from screenshots with Apple Vision before prompting Claude Code
 - **Editable prompts** — `picker.md` and `direction.md` are user-editable Markdown files
 - **Privacy** — screenshots stay on your Mac except for the call to Claude Code, which runs locally as a CLI
 
@@ -82,7 +83,7 @@ Output lands in `release/`.
 │ Tray (CS) — hotkey ⌘⇧Space                                │
 │   ↓                                                      │
 │ src/main/main.ts                                         │
-│   captureScreen → gatherContext → askClaude              │
+│   captureScreen → gatherContext + OCR → askClaude        │
 │                       │                ↓                 │
 │                       │            Picker (3 actions)    │
 │                       │                                  │
@@ -111,6 +112,8 @@ Key files:
 | `src/main/claude-binary.ts` | Find the `claude` binary across common install paths |
 | `src/main/session.ts` | Conversation state + Claude session lifecycle |
 | `src/main/mcp.ts` | `claude mcp list` parser, 30s cache |
+| `src/main/ocr.ts` | Run local Apple Vision OCR helper and return prompt-safe text |
+| `native/ocr-helper/main.swift` | Swift OCR helper built into `native/bin/ClawSenseOCR` |
 | `src/main/sensors/active-app.ts` | Frontmost app via osascript |
 | `src/main/context.ts` | Compose the noteBlock from sensors + MCP + user note |
 | `src/main/terminal/` | Per-app terminal launchers for "Open in terminal" |
@@ -119,6 +122,7 @@ Key files:
 ## Privacy & permissions
 
 - Screenshots are saved at `~/Library/Application Support/ClawSense/screenshots/` and passed to the local `claude -p` CLI. Anthropic receives them as part of the request your local Claude Code makes.
+- OCR runs locally through Apple Vision. Extracted text is added to the Claude prompt for the current request, but raw OCR text is not written to `events.jsonl`.
 - Window titles, app names, MCP server names live in process and may end up in `~/Library/Application Support/ClawSense/events.jsonl` for debugging — purely local.
 - No telemetry to ClawSense itself. There is no ClawSense server.
 - `--dangerously-skip-permissions` is passed to the Claude CLI. This is the deliberate trade-off for low-friction execution; understand it before enabling power features.
@@ -141,10 +145,10 @@ Follow / heckle / suggest:
 - [x] History + reopen
 - [x] Persisted window bounds
 - [x] Hidden-while-thinking UX
+- [x] Local OCR via Apple Vision
 - [ ] Crop to frontmost window for tighter screenshots
 - [ ] Transition tracker (15min ring buffer of app focus)
 - [ ] Optional passive auto-suggest when stuck
-- [ ] OCR pipeline via Gemini (parking lot)
 - [ ] Settings UI (currently env / file edit only)
 
 ## Contributing

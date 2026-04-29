@@ -28,7 +28,7 @@
   ],
   "main": "dist/main/main.js",
   "scripts": {
-    "build": "tsc",
+    "build": "node build/compile-ocr-helper.cjs && tsc",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
     "pack": "npm run build && electron-builder --mac dir",
@@ -53,6 +53,12 @@
       "package.json",
       "!**/*.map",
       "!**/*.ts"
+    ],
+    "extraResources": [
+      {
+        "from": "native/bin/ClawSenseOCR",
+        "to": "ClawSenseOCR"
+      }
     ],
     "mac": {
       "category": "public.app-category.developer-tools",

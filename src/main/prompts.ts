@@ -69,7 +69,7 @@ const DEFAULT_DIRECTION = `あなたは ClawSense という、macOSメニュー�
 選択された方向性: {{selectedLabel}}
 
 参考スクリーンショット:
-{{screenshotPath}}
+{{screenshotPath}}{{ocrBlock}}
 
 これまでの会話:
 {{transcript}}
