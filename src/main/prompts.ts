@@ -1,6 +1,7 @@
 import { app } from "electron";
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { readSettingsSync, type AppLanguage } from "./settings";
 
 export type PromptKey = "picker" | "direction";
 
@@ -107,64 +108,195 @@ const DEFAULT_DIRECTION = `あなたは ClawBrow という、macOSメニュー�
 - 出力はそのまま画面に表示されるので、コードフェンスや前後の説明文は不要
 `;
 
-const DEFAULTS: PromptsBundle = {
-  picker: DEFAULT_PICKER,
-  direction: DEFAULT_DIRECTION
+const DEFAULT_PICKER_EN = `You are ClawBrow, a quiet AI assistant that lives in the macOS menu bar.
+Its promise is: "When your brow moves, AI moves."
+Look at one screenshot and suggest three concrete next directions the user can take.
+
+## Posture
+
+- Be directly useful. Skip openings like "Great question" and give action-oriented suggestions.
+- Have judgment. A personality-free assistant is just a slower search engine.
+- You are a guest on the user's machine. Stay helpful and unobtrusive.
+
+Prioritize speed: read the screenshot with Read exactly once.
+Do not use Bash / WebSearch or other external research tools unless absolutely necessary.
+
+A macOS screenshot was just captured:
+{{screenshotPath}}
+Trigger id:
+{{triggerId}}{{noteBlock}}
+
+## Suggestion Shape
+
+Return three action-first suggestions:
+- Each label should be ready to execute if the user picks it
+- You may assume connected integrations/tools can be used
+- Do not end with vague labels like "check", "research", "consider", or "draft" only
+- Prefer "do this" language
+
+Vary the angle:
+- (1) Immediate response to what is on screen
+- (2) A more zoomed-out action that clarifies assumptions or structure
+- (3) A different angle such as validation, an alternate approach, sharing, or taking a break
+
+Label rules:
+- English, one line, imperative tone, roughly 40 characters max
+- Use concrete names visible on screen when useful: people, subjects, files, URLs, dates
+- Keep it short and human-readable
+
+kind must be one of:
+- "terminal" — terminal execution
+- "doc" — documents, email, calendar, logs
+- "code" — write or fix code
+- "search" — research
+- "general" — anything else
+
+## Output
+
+Return JSON only, with these exact keys. No explanation or code fences:
+{
+  "actions": [
+    { "id": "a1", "label": "...", "kind": "..." },
+    { "id": "a2", "label": "...", "kind": "..." },
+    { "id": "a3", "label": "...", "kind": "..." }
+  ]
+}
+`;
+
+const DEFAULT_DIRECTION_EN = `You are ClawBrow, an AI agent that lives in the macOS menu bar.
+Its promise is: "When your brow moves, AI moves."
+The user selected this direction:
+
+Selected direction: {{selectedLabel}}
+
+Reference screenshot:
+{{screenshotPath}}{{ocrBlock}}
+
+Conversation so far:
+{{transcript}}
+
+## Posture
+
+- Be directly useful. Skip filler and act.
+- Have judgment.
+- Investigate before asking.
+- Earn trust through capability.
+- You are a guest on the user's machine.
+
+## Execution Bias
+
+If the request is actionable, do the work in this turn. Continue until it is complete or genuinely blocked.
+Do not end with a plan when tools can move the work forward.
+If a tool result is thin or empty, change the query, path, command, or source before concluding.
+Verify facts that can change.
+The final answer needs evidence: test/build/lint results, screenshots, investigation details, tool output, or a named blocker.
+
+Available tools: Read / Grep / Glob / Bash / WebSearch / WebFetch,
+plus connected MCP integrations.
+
+Use integrations when they can complete the task. When done, report briefly in 1-2 lines.
+Only explain required steps when the integration is unavailable or information is missing.
+
+## Output Rules
+
+- Keep paragraphs around 2-4 lines
+- Use at most 3 bullets when useful
+- Avoid excessive preamble, thanks, and repetition
+- Keep Markdown minimal
+- The output is displayed directly in the app, so do not wrap it in code fences or extra commentary
+`;
+
+const DEFAULTS_BY_LANGUAGE: Record<AppLanguage, PromptsBundle> = {
+  ja: {
+    picker: DEFAULT_PICKER,
+    direction: DEFAULT_DIRECTION
+  },
+  en: {
+    picker: DEFAULT_PICKER_EN,
+    direction: DEFAULT_DIRECTION_EN
+  }
 };
 
-function promptsDir(): string {
-  return path.join(app.getPath("userData"), "prompts");
+function promptsDir(language: AppLanguage): string {
+  if (language === "ja") {
+    return path.join(app.getPath("userData"), "prompts");
+  }
+  return path.join(app.getPath("userData"), "prompts", language);
 }
 
-function fileFor(key: PromptKey): string {
-  return path.join(promptsDir(), `${key}.md`);
+function fileFor(key: PromptKey, language: AppLanguage): string {
+  return path.join(promptsDir(language), `${key}.md`);
 }
 
-async function ensureFile(key: PromptKey): Promise<void> {
-  const target = fileFor(key);
+async function ensureFile(key: PromptKey, language: AppLanguage): Promise<void> {
+  const target = fileFor(key, language);
   await fs.mkdir(path.dirname(target), { recursive: true });
   try {
     await fs.access(target);
   } catch {
-    await fs.writeFile(target, DEFAULTS[key], "utf8");
+    await fs.writeFile(target, DEFAULTS_BY_LANGUAGE[language][key], "utf8");
   }
 }
 
 export async function ensurePromptsExist(): Promise<void> {
-  await ensureFile("picker");
-  await ensureFile("direction");
-}
-
-export async function readPrompt(key: PromptKey): Promise<string> {
-  await ensureFile(key);
-  return fs.readFile(fileFor(key), "utf8");
-}
-
-export async function readAllPrompts(): Promise<PromptsBundle> {
-  const [picker, direction] = await Promise.all([readPrompt("picker"), readPrompt("direction")]);
-  return { picker, direction };
-}
-
-export async function savePrompt(key: PromptKey, content: string): Promise<void> {
-  await fs.mkdir(promptsDir(), { recursive: true });
-  await fs.writeFile(fileFor(key), content, "utf8");
-}
-
-export async function saveAllPrompts(bundle: PromptsBundle): Promise<void> {
-  await fs.mkdir(promptsDir(), { recursive: true });
   await Promise.all([
-    fs.writeFile(fileFor("picker"), bundle.picker, "utf8"),
-    fs.writeFile(fileFor("direction"), bundle.direction, "utf8")
+    ensureFile("picker", "ja"),
+    ensureFile("direction", "ja"),
+    ensureFile("picker", "en"),
+    ensureFile("direction", "en")
   ]);
 }
 
-export async function resetPrompts(): Promise<PromptsBundle> {
-  await saveAllPrompts(DEFAULTS);
-  return DEFAULTS;
+export async function readPrompt(
+  key: PromptKey,
+  language: AppLanguage = readSettingsSync().language
+): Promise<string> {
+  await ensureFile(key, language);
+  return fs.readFile(fileFor(key, language), "utf8");
 }
 
-export function getDefaultPrompts(): PromptsBundle {
-  return { ...DEFAULTS };
+export async function readAllPrompts(
+  language: AppLanguage = readSettingsSync().language
+): Promise<PromptsBundle> {
+  const [picker, direction] = await Promise.all([
+    readPrompt("picker", language),
+    readPrompt("direction", language)
+  ]);
+  return { picker, direction };
+}
+
+export async function savePrompt(
+  key: PromptKey,
+  content: string,
+  language: AppLanguage = readSettingsSync().language
+): Promise<void> {
+  await fs.mkdir(promptsDir(language), { recursive: true });
+  await fs.writeFile(fileFor(key, language), content, "utf8");
+}
+
+export async function saveAllPrompts(
+  bundle: PromptsBundle,
+  language: AppLanguage = readSettingsSync().language
+): Promise<void> {
+  await fs.mkdir(promptsDir(language), { recursive: true });
+  await Promise.all([
+    fs.writeFile(fileFor("picker", language), bundle.picker, "utf8"),
+    fs.writeFile(fileFor("direction", language), bundle.direction, "utf8")
+  ]);
+}
+
+export async function resetPrompts(
+  language: AppLanguage = readSettingsSync().language
+): Promise<PromptsBundle> {
+  const defaults = DEFAULTS_BY_LANGUAGE[language];
+  await saveAllPrompts(defaults, language);
+  return { ...defaults };
+}
+
+export function getDefaultPrompts(
+  language: AppLanguage = readSettingsSync().language
+): PromptsBundle {
+  return { ...DEFAULTS_BY_LANGUAGE[language] };
 }
 
 export function render(template: string, vars: Record<string, string>): string {

@@ -3,23 +3,38 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>プロンプト編集 — ClawBrow</title>
+    <title>Settings — ClawBrow</title>
     <link rel="stylesheet" href="./styles.css" />
     <link rel="stylesheet" href="./prompts.css" />
     <script defer src="../../dist/renderer/prompts.js"></script>
   </head>
   <body data-view="prompts">
     <main class="note-shell">
-      <form id="prompts-form" class="note-panel prompts-panel" aria-label="プロンプトを編集">
+      <form id="prompts-form" class="note-panel prompts-panel" aria-label="Settings">
         <header class="note-header">
           <div>
             <p class="eyebrow">ClawBrow</p>
-            <h1>プロンプト編集</h1>
+            <h1 id="settings-title">設定</h1>
           </div>
           <button type="button" id="prompts-close" class="icon-button" aria-label="閉じる">
             <svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </button>
         </header>
+
+        <section class="settings-section" aria-label="Language">
+          <label class="settings-label" for="language-select">
+            <span id="language-label">言語</span>
+          </label>
+          <select id="language-select" class="settings-select">
+            <option value="ja">日本語</option>
+            <option value="en">English</option>
+          </select>
+        </section>
+
+        <div class="settings-subhead">
+          <h2 id="prompts-title">プロンプト</h2>
+          <p id="prompts-description">選択中の言語でClaudeに渡す指示を編集します。</p>
+        </div>
 
         <div class="prompts-tabs" role="tablist">
           <button
@@ -29,7 +44,7 @@
             data-tab="picker"
             aria-selected="true"
           >
-            3提案プロンプト
+            <span data-i18n="pickerTab">3提案プロンプト</span>
           </button>
           <button
             type="button"
@@ -38,7 +53,7 @@
             data-tab="direction"
             aria-selected="false"
           >
-            追加質問プロンプト
+            <span data-i18n="directionTab">追加質問プロンプト</span>
           </button>
         </div>
 

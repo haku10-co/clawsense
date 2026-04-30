@@ -7,6 +7,10 @@ const ICON_CHEVRON_RIGHT_SVG =
 const ICON_PENCIL_SVG =
   '<svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/></svg>';
 
+function pickerLanguage(): "ja" | "en" {
+  return document.documentElement.lang === "en" ? "en" : "ja";
+}
+
 function buildPickerSkeleton(): HTMLLIElement {
   const li = document.createElement("li");
   li.className = "action-skeleton";
@@ -20,7 +24,10 @@ function buildPickerSkeleton(): HTMLLIElement {
 function buildPickerEmpty(): HTMLLIElement {
   const empty = document.createElement("li");
   empty.className = "empty-state";
-  empty.textContent = "提案を取得できませんでした。「再提案」をお試しください。";
+  empty.textContent =
+    pickerLanguage() === "en"
+      ? "Could not get suggestions. Try again."
+      : "提案を取得できませんでした。「再提案」をお試しください。";
   return empty;
 }
 
@@ -46,7 +53,7 @@ function buildActionCard(
   editBtn.type = "button";
   editBtn.className = "action-edit-button";
   editBtn.innerHTML = ICON_PENCIL_SVG;
-  editBtn.setAttribute("aria-label", "ラベルを編集");
+  editBtn.setAttribute("aria-label", pickerLanguage() === "en" ? "Edit label" : "ラベルを編集");
 
   const arrow = document.createElement("span");
   arrow.className = "action-arrow";

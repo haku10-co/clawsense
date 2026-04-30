@@ -2,6 +2,8 @@ import type { FaceSample } from "../main/sensors/face-watcher";
 import type { FeedbackValue, ResultPayload, SuggestionPayload } from "../main/types";
 
 type PromptsBundle = { picker: string; direction: string };
+type AppLanguage = "ja" | "en";
+type AppSettings = { language: AppLanguage };
 
 declare global {
   interface Window {
@@ -27,6 +29,9 @@ declare global {
       readPrompts(): Promise<PromptsBundle>;
       savePrompts(bundle: PromptsBundle): Promise<void>;
       resetPrompts(): Promise<PromptsBundle>;
+      readSettings(): Promise<AppSettings>;
+      saveSettings(settings: AppSettings): Promise<AppSettings>;
+      setLanguage(language: AppLanguage): Promise<{ settings: AppSettings; prompts: PromptsBundle }>;
       openSettings(): Promise<void>;
       faceSample(sample: FaceSample): Promise<void>;
     };

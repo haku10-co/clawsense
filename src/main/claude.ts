@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { cliEnv } from "./cli-env";
 import { getClaudeBinaryOrThrow } from "./claude-binary";
+import { message, messageTemplate } from "./i18n";
 import { readPrompt, render } from "./prompts";
 import type { ActionKind, OcrResult, SuggestionAction, SuggestionPayload, Turn } from "./types";
 
@@ -50,7 +51,7 @@ async function runClaude(
         proc.kill("SIGKILL");
         signal?.removeEventListener("abort", onAbort);
         const seconds = Math.round(timeoutMs / 1000);
-        reject(new Error(`Claude の応答が ${seconds} 秒以内に返ってきませんでした。`));
+        reject(new Error(messageTemplate("claudeTimeout", { seconds })));
       }
     }, timeoutMs);
 
@@ -218,10 +219,7 @@ function isClaudeExecutionError(rawText: string): boolean {
 function formatClaudeError(rawText: string): string {
   const trimmed = rawText.trim();
   if (isClaudeExecutionError(trimmed)) {
-    return (
-      "Claude CLI が Execution error を返しました。Claude Code CLI のログイン状態と、" +
-      "画面収録/カメラ権限を確認してください。"
-    );
+    return message("claudeExecutionError");
   }
   return `Claude CLI returned an error: ${trimmed.slice(0, 500)}`;
 }
@@ -307,9 +305,9 @@ function renderOcrBlock(ocr?: OcrResult | null): string {
   const truncated = ocr.truncated ? " truncated=true" : "";
   return [
     "",
-    "画面OCRテキスト:",
+    `${message("ocrHeader")}:`,
     `engine=${ocr.engine}${confidence} elapsed=${ocr.elapsedMs}ms${truncated}`,
-    "注: OCRは不完全な可能性があります。正確な判断にはスクリーンショットも参照してください。",
+    message("ocrCaveat"),
     ocr.text
   ].join("\n");
 }
@@ -329,7 +327,9 @@ async function buildDirectionPrompt(input: AskDirectionInput): Promise<string> {
   const template = await readPrompt("direction");
   const transcript = input.turns
     .map((turn) =>
-      turn.role === "user" ? `ユーザー: ${turn.content}` : `アシスタント: ${turn.content}`
+      turn.role === "user"
+        ? `${message("transcriptUser")}: ${turn.content}`
+        : `${message("transcriptAssistant")}: ${turn.content}`
     )
     .join("\n\n");
 
