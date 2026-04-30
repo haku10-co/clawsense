@@ -1,10 +1,12 @@
 import { listConnectedMcpServers, type McpServer } from "./mcp";
 import { getActiveApp, type ActiveApp } from "./sensors/active-app";
+import type { OcrResult } from "./types";
 
 export type ContextBundle = {
   userNote?: string;
   activeApp?: ActiveApp;
   mcpServers?: McpServer[];
+  ocr?: OcrResult | null;
   // TODO: 自動収集ソース。今はスタブ。
   // appTransitions?: string[];   // 直近5分のアプリ遷移
   // windowTitle?: string;         // frontmost ウィンドウタイトル
@@ -50,6 +52,22 @@ function renderMcpSection(servers: McpServer[]): string {
   return lines.join("\n");
 }
 
+function renderOcrSection(ocr: OcrResult): string | null {
+  const text = ocr.text.trim();
+  if (!text) {
+    return null;
+  }
+
+  const confidence =
+    typeof ocr.confidence === "number" ? ` confidence=${ocr.confidence.toFixed(2)}` : "";
+  const truncated = ocr.truncated ? " truncated=true" : "";
+  return [
+    `画面OCRテキスト (${ocr.engine}${confidence} elapsed=${ocr.elapsedMs}ms${truncated})`,
+    "注: OCRは不完全な可能性があります。正確な判断にはスクリーンショットも参照してください。",
+    text
+  ].join("\n");
+}
+
 export function renderNoteBlock(bundle: ContextBundle): string {
   const sections: string[] = [];
 
@@ -63,6 +81,13 @@ export function renderNoteBlock(bundle: ContextBundle): string {
 
   if (bundle.mcpServers && bundle.mcpServers.length > 0) {
     sections.push(renderMcpSection(bundle.mcpServers));
+  }
+
+  if (bundle.ocr) {
+    const ocrSection = renderOcrSection(bundle.ocr);
+    if (ocrSection) {
+      sections.push(ocrSection);
+    }
   }
 
   if (sections.length === 0) {

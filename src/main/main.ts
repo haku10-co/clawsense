@@ -9,6 +9,7 @@ import { gatherContext, renderNoteBlock } from "./context";
 import { getById, listRecent, saveSession, type HistoricalSession } from "./history";
 import { registerIpcHandlers } from "./ipc";
 import { logEvent } from "./logger";
+import { extractOcrText } from "./ocr";
 import {
   openCameraSettings,
   getScreenAccessStatus,
@@ -35,7 +36,7 @@ import {
 } from "./sensors/looks-stuck-detector";
 import { getSessionSnapshot, restoreSession } from "./session";
 import { logStartupDiagnostics } from "./startup-diagnostics";
-import type { ResultPayload, SuggestionPayload, TriggerSource } from "./types";
+import type { OcrResult, ResultPayload, SuggestionPayload, TriggerSource } from "./types";
 import {
   applyDockIndicator,
   applySuggestionPanelBounds,
@@ -53,6 +54,7 @@ let cachedBounds: { x: number; y: number; width: number; height: number } | null
 let saveBoundsTimer: NodeJS.Timeout | null = null;
 let recentHistory: HistoricalSession[] = [];
 let currentAskController: AbortController | null = null;
+let recentOcr = new Map<string, OcrResult | null>();
 let lastLooksStuckLogAt = 0;
 let lastLooksStuckReason: string | null = null;
 let suggestionDocked = false;
@@ -263,6 +265,31 @@ function handleLooksStuckSample(sample: FaceSample): void {
   }
 }
 
+function ocrLogMetadata(ocr: OcrResult | null): Record<string, unknown> {
+  if (!ocr) {
+    return { hasOcr: false };
+  }
+  return {
+    hasOcr: true,
+    ocrEngine: ocr.engine,
+    ocrCharCount: ocr.text.length,
+    ocrElapsedMs: ocr.elapsedMs,
+    ocrConfidence: ocr.confidence,
+    ocrTruncated: ocr.truncated,
+    ocrObservationCount: ocr.observations.length
+  };
+}
+
+function rememberOcr(triggerId: string, ocr: OcrResult | null): void {
+  recentOcr.set(triggerId, ocr);
+  if (recentOcr.size > 20) {
+    const oldest = recentOcr.keys().next().value;
+    if (oldest) {
+      recentOcr.delete(oldest);
+    }
+  }
+}
+
 async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
   if (currentAskController) {
     currentAskController.abort();
@@ -316,8 +343,21 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
       return;
     }
 
-    const context = await contextPromise;
-    const noteBlock = renderNoteBlock(context);
+    const [context, ocr] = await Promise.all([
+      contextPromise,
+      extractOcrText({ screenshotPath, signal: ctrl.signal }).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        void logEvent({
+          type: "ocr_error",
+          triggerId,
+          createdAt: new Date().toISOString(),
+          message: message.slice(0, 300)
+        });
+        return null;
+      })
+    ]);
+    rememberOcr(triggerId, ocr);
+    const noteBlock = renderNoteBlock({ ...context, ocr });
 
     await logEvent({
       type: "trigger",
@@ -325,7 +365,8 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
       createdAt: new Date(startedAt).toISOString(),
       source,
       screenshotPath,
-      userNote: context.userNote
+      userNote: context.userNote,
+      ...ocrLogMetadata(ocr)
     });
 
     if (ctrl.signal.aborted) {
@@ -522,6 +563,7 @@ app.whenReady().then(async () => {
   registerIpcHandlers({
     getSuggestionWindow: () => suggestionWindow,
     getLastSuggestion: () => lastSuggestion,
+    getOcrForTrigger: (triggerId) => recentOcr.get(triggerId) ?? null,
     sendResult,
     sendPendingSuggestion,
     hideSuggestionWindow: () => suggestionWindow?.hide(),

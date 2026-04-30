@@ -33,3 +33,16 @@ export type ResultPayload = {
 };
 
 export type FeedbackValue = "select" | "wrong" | "retry" | "dismissed";
+
+export type OcrResult = {
+  engine: "apple-vision";
+  text: string;
+  elapsedMs: number;
+  truncated: boolean;
+  confidence?: number;
+  observations: Array<{
+    text: string;
+    confidence: number;
+    box: [number, number, number, number];
+  }>;
+};

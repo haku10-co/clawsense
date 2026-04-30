@@ -5,7 +5,7 @@ const HELP_BY_TAB: Record<PromptKey, string> = {
   picker:
     "利用可能な変数: {{screenshotPath}} {{triggerId}} {{noteBlock}}",
   direction:
-    "利用可能な変数: {{selectedLabel}} {{screenshotPath}} {{transcript}}"
+    "利用可能な変数: {{selectedLabel}} {{screenshotPath}} {{ocrBlock}} {{transcript}}"
 };
 
 function pById<T extends HTMLElement>(id: string): T {
