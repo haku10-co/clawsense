@@ -3,6 +3,8 @@ import type { FeedbackValue, ResultPayload, SuggestionPayload } from "./types";
 import type { FaceSample } from "./sensors/face-watcher";
 
 type PromptsBundle = { picker: string; direction: string };
+type AppLanguage = "ja" | "en";
+type AppSettings = { language: AppLanguage };
 
 contextBridge.exposeInMainWorld("clawSense", {
   onSuggestion(callback: (payload: SuggestionPayload) => void) {
@@ -13,6 +15,9 @@ contextBridge.exposeInMainWorld("clawSense", {
   },
   onResultToast(callback: (message: string) => void) {
     ipcRenderer.on("result:toast", (_event, message: string) => callback(message));
+  },
+  onSettingsUpdate(callback: (settings: AppSettings) => void) {
+    ipcRenderer.on("settings:update", (_event, settings: AppSettings) => callback(settings));
   },
   suggestionReady() {
     return ipcRenderer.invoke("suggestion:ready");
@@ -52,6 +57,15 @@ contextBridge.exposeInMainWorld("clawSense", {
   },
   resetPrompts(): Promise<PromptsBundle> {
     return ipcRenderer.invoke("prompts:reset");
+  },
+  readSettings(): Promise<AppSettings> {
+    return ipcRenderer.invoke("settings:read");
+  },
+  saveSettings(settings: AppSettings): Promise<AppSettings> {
+    return ipcRenderer.invoke("settings:save", settings);
+  },
+  setLanguage(language: AppLanguage): Promise<{ settings: AppSettings; prompts: PromptsBundle }> {
+    return ipcRenderer.invoke("settings:set-language", language);
   },
   openSettings(): Promise<void> {
     return ipcRenderer.invoke("settings:open");

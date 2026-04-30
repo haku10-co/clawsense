@@ -2,6 +2,7 @@ type ViewName = "suggestion" | "note";
 type ViewState = "picker" | "result";
 type FeedbackValue = "select" | "wrong" | "retry" | "dismissed";
 type ActionKind = "terminal" | "doc" | "code" | "search" | "general";
+type SuggestionLanguage = "ja" | "en";
 
 type SuggestionAction = { id: string; label: string; kind: ActionKind };
 
@@ -28,6 +29,73 @@ type ResultPayload = {
 
 const view = document.body.dataset.view as ViewName | undefined;
 const VALID_KINDS: readonly ActionKind[] = ["terminal", "doc", "code", "search", "general"];
+const SUGGESTION_COPY: Record<
+  SuggestionLanguage,
+  {
+    defaultHeadline: string;
+    retrying: string;
+    selecting: string;
+    sendingFeedback: string;
+    sendFailed: string;
+    resultThinking: string;
+    notePlaceholder: string;
+    noteLabel: string;
+    wrong: string;
+    retry: string;
+    settings: string;
+    close: string;
+    selected: string;
+    threadPlaceholder: string;
+    send: string;
+    openTerminal: string;
+    reroll: string;
+  }
+> = {
+  ja: {
+    defaultHeadline: "提案",
+    retrying: "やり直しています…",
+    selecting: "選択を記録しています…",
+    sendingFeedback: "フィードバックを送信中…",
+    sendFailed: "送信できませんでした。",
+    resultThinking: "ClawBrow が考えています…",
+    notePlaceholder: "状況を一言（任意）— Enterで再生成",
+    noteLabel: "補助メモ",
+    wrong: "違う",
+    retry: "再提案",
+    settings: "設定",
+    close: "閉じる",
+    selected: "選択中",
+    threadPlaceholder: "追加で聞きたいことを入力…",
+    send: "送信",
+    openTerminal: "ターミナルで開く",
+    reroll: "別案をもらう"
+  },
+  en: {
+    defaultHeadline: "Suggestions",
+    retrying: "Trying again...",
+    selecting: "Recording selection...",
+    sendingFeedback: "Sending feedback...",
+    sendFailed: "Could not send.",
+    resultThinking: "ClawBrow is thinking...",
+    notePlaceholder: "Add context (optional) - Enter to regenerate",
+    noteLabel: "Context note",
+    wrong: "Not right",
+    retry: "Try again",
+    settings: "Settings",
+    close: "Close",
+    selected: "Selected",
+    threadPlaceholder: "Ask a follow-up...",
+    send: "Send",
+    openTerminal: "Open in Terminal",
+    reroll: "Get another take"
+  }
+};
+
+let language: SuggestionLanguage = "ja";
+
+function copy(): (typeof SUGGESTION_COPY)[SuggestionLanguage] {
+  return SUGGESTION_COPY[language];
+}
 
 function byId<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
@@ -135,6 +203,39 @@ function initSuggestion(): void {
   const threadSend = threadForm.querySelector<HTMLButtonElement>(".thread-send");
   const suggestionCard = document.querySelector<HTMLElement>(".suggestion-card");
 
+  function applyLanguageUi(): void {
+    const c = copy();
+    document.documentElement.lang = language;
+    const noteInput = document.getElementById("picker-note-input") as HTMLInputElement | null;
+    if (noteInput) {
+      noteInput.placeholder = c.notePlaceholder;
+      noteInput.setAttribute("aria-label", c.noteLabel);
+    }
+    const topClose = document.getElementById("top-close");
+    topClose?.setAttribute("aria-label", c.close);
+    document.querySelectorAll<HTMLButtonElement>('[data-action="settings"]').forEach((button) => {
+      button.setAttribute("aria-label", c.settings);
+    });
+    document.querySelectorAll<HTMLElement>('[data-feedback="wrong"] span').forEach((el) => {
+      el.textContent = c.wrong;
+    });
+    document.querySelectorAll<HTMLElement>('[data-feedback="retry"] span').forEach((el) => {
+      el.textContent = c.retry;
+    });
+    const chipLabel = document.querySelector<HTMLElement>(".chip-label");
+    if (chipLabel) {
+      chipLabel.textContent = c.selected;
+    }
+    threadInput.placeholder = c.threadPlaceholder;
+    threadSend?.setAttribute("aria-label", c.send);
+    document.querySelectorAll<HTMLElement>('[data-result-action="terminal"] span').forEach((el) => {
+      el.textContent = c.openTerminal;
+    });
+    document.querySelectorAll<HTMLElement>('[data-result-action="reroll"] span').forEach((el) => {
+      el.textContent = c.reroll;
+    });
+  }
+
   function sendPickerFeedback(
     feedback: FeedbackValue,
     actionId?: string,
@@ -148,15 +249,15 @@ function initSuggestion(): void {
     setDisabled(pickerButtons, true);
     status.textContent =
       feedback === "retry"
-        ? "やり直しています…"
+        ? copy().retrying
         : feedback === "select"
-          ? "選択を記録しています…"
-          : "フィードバックを送信中…";
+          ? copy().selecting
+          : copy().sendingFeedback;
 
     window.clawSense
       .sendFeedback(suggestion.triggerId, feedback, actionId, customLabel)
       .catch((error: unknown) => {
-        const msg = error instanceof Error ? error.message : "送信できませんでした。";
+        const msg = error instanceof Error ? error.message : copy().sendFailed;
         status.textContent = msg;
         setDisabled(pickerButtons, false);
       });
@@ -167,7 +268,7 @@ function initSuggestion(): void {
     setState("picker");
     document.body.dataset.pending = payload.pending ? "true" : "false";
     document.body.dataset.compact = payload.compact ? "true" : "false";
-    setText("headline", payload.headline || "提案");
+    setText("headline", payload.headline || copy().defaultHeadline);
     setText("hint", payload.hint || "");
 
     if (lastTriggerId !== payload.triggerId) {
@@ -198,7 +299,7 @@ function initSuggestion(): void {
     }
     threadInput.disabled = payload.pending;
     setDisabled(resultButtons, payload.pending);
-    resultStatus.textContent = payload.pending ? "ClawBrow が考えています…" : "";
+    resultStatus.textContent = payload.pending ? copy().resultThinking : "";
 
     if (!payload.pending) {
       threadInput.focus();
@@ -206,6 +307,24 @@ function initSuggestion(): void {
   }
 
   setDisabled(pickerButtons, true);
+  window.clawSense.onSettingsUpdate((settings) => {
+    language = settings.language;
+    applyLanguageUi();
+    if (document.body.dataset.state === "picker" && suggestion) {
+      renderPicker(suggestion);
+    } else if (document.body.dataset.state === "result" && result) {
+      renderResult(result);
+    }
+  });
+  window.clawSense
+    .readSettings()
+    .then((settings) => {
+      language = settings.language;
+      applyLanguageUi();
+    })
+    .catch(() => {
+      applyLanguageUi();
+    });
   window.clawSense.onSuggestion(renderPicker);
   window.clawSense.onResult(renderResult);
   window.clawSense.onResultToast((message) => {

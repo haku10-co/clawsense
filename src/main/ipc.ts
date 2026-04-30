@@ -1,6 +1,8 @@
 import { BrowserWindow, ipcMain } from "electron";
+import { message } from "./i18n";
 import { logEvent } from "./logger";
 import { readAllPrompts, resetPrompts, saveAllPrompts, type PromptsBundle } from "./prompts";
+import { readSettings, saveSettings, type AppLanguage, type AppSettings } from "./settings";
 import {
   appendUserTurn,
   clearSession,
@@ -29,6 +31,7 @@ export type IpcDeps = {
   runAsk: (source: TriggerSource, note?: string) => Promise<void>;
   showPromptsEditor: () => void;
   onSessionUpdated?: () => void;
+  onSettingsUpdated?: (settings: AppSettings) => void;
 };
 
 export function registerIpcHandlers(deps: IpcDeps): void {
@@ -116,10 +119,7 @@ export function registerIpcHandlers(deps: IpcDeps): void {
     const outcome = await openInTerminal();
     const win = deps.getSuggestionWindow();
     if (outcome?.fallback) {
-      win?.webContents.send(
-        "result:toast",
-        "コマンドをコピーしました — ターミナルに貼り付けてください"
-      );
+      win?.webContents.send("result:toast", message("terminalFallbackToast"));
       return;
     }
     win?.hide();
@@ -131,6 +131,17 @@ export function registerIpcHandlers(deps: IpcDeps): void {
   ipcMain.handle("prompts:read", () => readAllPrompts());
   ipcMain.handle("prompts:save", (_event, bundle: PromptsBundle) => saveAllPrompts(bundle));
   ipcMain.handle("prompts:reset", () => resetPrompts());
+  ipcMain.handle("settings:read", () => readSettings());
+  ipcMain.handle("settings:save", async (_event, settings: AppSettings) => {
+    const saved = await saveSettings(settings);
+    deps.onSettingsUpdated?.(saved);
+    return saved;
+  });
+  ipcMain.handle("settings:set-language", async (_event, language: AppLanguage) => {
+    const saved = await saveSettings({ language });
+    deps.onSettingsUpdated?.(saved);
+    return { settings: saved, prompts: await readAllPrompts(saved.language) };
+  });
 
   ipcMain.handle("settings:open", () => deps.showPromptsEditor());
 }

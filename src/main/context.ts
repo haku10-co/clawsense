@@ -1,6 +1,7 @@
 import { listConnectedMcpServers, type McpServer } from "./mcp";
 import { getActiveApp, type ActiveApp } from "./sensors/active-app";
 import type { OcrResult } from "./types";
+import { message } from "./i18n";
 
 export type ContextBundle = {
   userNote?: string;
@@ -37,17 +38,17 @@ function renderMcpSection(servers: McpServer[]): string {
   const needsAuth = servers.filter((s) => s.status === "needs-auth").map((s) => s.name);
   const failed = servers.filter((s) => s.status === "failed").map((s) => s.name);
 
-  const lines: string[] = ["利用可能な連携 (MCP):"];
+  const lines: string[] = [message("mcpHeader")];
   if (connected.length > 0) {
-    lines.push(`- 接続済み（使える）: ${connected.join(", ")}`);
+    lines.push(`- ${message("mcpConnected")}: ${connected.join(", ")}`);
   } else {
-    lines.push("- 接続済み（使える）: なし");
+    lines.push(`- ${message("mcpConnectedEmpty")}`);
   }
   if (needsAuth.length > 0) {
-    lines.push(`- 認証待ち（今は使えない）: ${needsAuth.join(", ")}`);
+    lines.push(`- ${message("mcpNeedsAuth")}: ${needsAuth.join(", ")}`);
   }
   if (failed.length > 0) {
-    lines.push(`- 切断・エラー: ${failed.join(", ")}`);
+    lines.push(`- ${message("mcpFailed")}: ${failed.join(", ")}`);
   }
   return lines.join("\n");
 }
@@ -62,8 +63,8 @@ function renderOcrSection(ocr: OcrResult): string | null {
     typeof ocr.confidence === "number" ? ` confidence=${ocr.confidence.toFixed(2)}` : "";
   const truncated = ocr.truncated ? " truncated=true" : "";
   return [
-    `画面OCRテキスト (${ocr.engine}${confidence} elapsed=${ocr.elapsedMs}ms${truncated})`,
-    "注: OCRは不完全な可能性があります。正確な判断にはスクリーンショットも参照してください。",
+    `${message("ocrHeader")} (${ocr.engine}${confidence} elapsed=${ocr.elapsedMs}ms${truncated})`,
+    message("ocrCaveat"),
     text
   ].join("\n");
 }
@@ -72,11 +73,11 @@ export function renderNoteBlock(bundle: ContextBundle): string {
   const sections: string[] = [];
 
   if (bundle.activeApp) {
-    sections.push(`アクティブなアプリ: ${bundle.activeApp.name}`);
+    sections.push(`${message("activeApp")}: ${bundle.activeApp.name}`);
   }
 
   if (bundle.userNote) {
-    sections.push(`ユーザーのメモ:\n${bundle.userNote}`);
+    sections.push(`${message("userNote")}:\n${bundle.userNote}`);
   }
 
   if (bundle.mcpServers && bundle.mcpServers.length > 0) {

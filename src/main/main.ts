@@ -8,6 +8,7 @@ import { askClaude, ClaudeAbortError } from "./claude";
 import { gatherContext, renderNoteBlock } from "./context";
 import { getById, listRecent, saveSession, type HistoricalSession } from "./history";
 import { registerIpcHandlers } from "./ipc";
+import { message as t } from "./i18n";
 import { logEvent } from "./logger";
 import { extractOcrText } from "./ocr";
 import {
@@ -17,6 +18,7 @@ import {
   triggerScreenAccessPrompt
 } from "./permissions";
 import { ensurePromptsExist } from "./prompts";
+import { ensureSettingsExist } from "./settings";
 import {
   recordFaceSample,
   showFaceWatcher,
@@ -172,7 +174,7 @@ function showSuggestion(payload: SuggestionPayload): void {
 function showThinkingIndicator(triggerId: string): void {
   pendingSuggestion = {
     triggerId,
-    headline: "考え中",
+    headline: t("thinkingHeadline"),
     hint: "",
     actions: [],
     rawText: "",
@@ -306,7 +308,7 @@ function setTrayThinking(thinking: boolean): void {
 
 function buildLooksStuckNote(state: LooksStuckState): string {
   return (
-    "自動検出: 直近の作業で詰まっていそうな状態が継続しています。\n" +
+    `${t("looksStuckNote")}\n` +
     `activeApp=${state.activeAppName ?? "unknown"} ` +
     `window=${(state.windowMs / 1000).toFixed(1)}s ` +
     `avg=${state.avgScore.toFixed(3)} ` +
@@ -406,11 +408,11 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
     void triggerScreenAccessPrompt();
     showSuggestion({
       triggerId,
-      headline: "画面収録の権限が必要です",
+      headline: t("screenPermissionHeadline"),
       hint:
         accessStatus === "denied"
-          ? "システム設定 > プライバシーとセキュリティ > 画面収録 で ClawBrow を許可し、アプリを再起動してください。"
-          : "ダイアログが表示されたら『許可』を押してください。許可後はアプリの再起動が必要です。",
+          ? t("screenPermissionDeniedHint")
+          : t("screenPermissionPromptHint"),
       actions: [],
       rawText: `screen-access status: ${accessStatus}`,
       latencyMs: 0,
@@ -478,9 +480,11 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
     const payload: SuggestionPayload = {
       ...response,
       headline:
-        response.actions.length > 0 ? "次にやることを選んでください" : "提案を生成できませんでした",
+        response.actions.length > 0
+          ? t("pickerSuccessHeadline")
+          : t("pickerEmptyHeadline"),
       hint:
-        response.actions.length > 0 ? "いちばん近いと思うアクションをクリック" : "「再提案」をお試しください",
+        response.actions.length > 0 ? t("pickerSuccessHint") : t("pickerEmptyHint"),
       latencyMs: Date.now() - startedAt,
       screenshotPath,
       pending: false
@@ -504,8 +508,8 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     showSuggestion({
       triggerId,
-      headline: "リクエストを完了できませんでした",
-      hint: message.slice(0, 220) || "画面収録の権限と Claude Code CLI のログイン状態をご確認ください",
+      headline: t("requestFailedHeadline"),
+      hint: message.slice(0, 220) || t("requestFailedFallbackHint"),
       actions: [],
       rawText: message,
       latencyMs: Date.now() - startedAt,
@@ -549,7 +553,7 @@ async function reopenHistorySession(triggerId: string): Promise<void> {
 
 function buildHistorySubmenu(): Electron.MenuItemConstructorOptions[] {
   if (recentHistory.length === 0) {
-    return [{ label: "履歴なし", enabled: false }];
+    return [{ label: t("historyEmpty"), enabled: false }];
   }
   return recentHistory.map((s) => ({
     label: `${truncate(s.selectedLabel, 50)}  —  ${formatDate(s.updatedAt)}`,
@@ -561,40 +565,42 @@ function buildMenu(): Menu {
   const lastScreenshot = lastSuggestion?.screenshotPath;
   const screenshotDir = getScreenshotsDir();
   return Menu.buildFromTemplate([
-    { label: "ClawBrow に聞く", click: () => void runAsk("menu") },
+    { label: t("menuAsk"), click: () => void runAsk("menu") },
     {
-      label: "直前の提案を開く",
+      label: t("menuOpenLast"),
       enabled: Boolean(lastSuggestion),
       click: () => lastSuggestion && showSuggestion(lastSuggestion)
     },
-    { label: "履歴", submenu: buildHistorySubmenu() },
+    { label: t("menuHistory"), submenu: buildHistorySubmenu() },
     { type: "separator" },
-    { label: "プロンプトを編集...", click: () => showPromptsEditor() },
+    { label: t("menuSettings"), click: () => showPromptsEditor() },
     {
-      label: "デバッグ",
+      label: t("menuDebug"),
       submenu: [
         {
-          label: shortcutRegistered ? `ホットキー: ${HOTKEY}` : `ホットキー未登録: ${HOTKEY}`,
+          label: shortcutRegistered
+            ? `${t("menuHotkey")}: ${HOTKEY}`
+            : `${t("menuHotkeyMissing")}: ${HOTKEY}`,
           enabled: false
         },
-        { label: "画面収録の設定を開く", click: () => openScreenRecordingSettings() },
-        { label: "カメラの設定を開く", click: () => openCameraSettings() },
+        { label: t("menuOpenScreenRecording"), click: () => openScreenRecordingSettings() },
+        { label: t("menuOpenCamera"), click: () => openCameraSettings() },
         {
-          label: "Face Watcher を開く",
+          label: t("menuOpenFaceWatcher"),
           click: () => void showFaceWatcher({ preloadPath: preloadPath() })
         },
         { type: "separator" },
-        { label: "データフォルダを開く", click: () => void shell.openPath(getAppDataDir()) },
-        { label: "ログフォルダを開く", click: () => void shell.openPath(getLogsDir()) },
-        { label: "スクショフォルダを開く", click: () => void shell.openPath(screenshotDir) },
+        { label: t("menuOpenData"), click: () => void shell.openPath(getAppDataDir()) },
+        { label: t("menuOpenLogs"), click: () => void shell.openPath(getLogsDir()) },
+        { label: t("menuOpenScreenshots"), click: () => void shell.openPath(screenshotDir) },
         {
-          label: "直前のスクショを開く",
+          label: t("menuOpenLastScreenshot"),
           enabled: Boolean(lastScreenshot),
           click: () => lastScreenshot && void shell.openPath(lastScreenshot)
         }
       ]
     },
-    { label: "終了", click: () => app.quit() }
+    { label: t("menuQuit"), click: () => app.quit() }
   ]);
 }
 
@@ -629,6 +635,10 @@ app.whenReady().then(async () => {
   trayRefreshTimer = setInterval(() => ensureTray("heartbeat"), TRAY_REFRESH_INTERVAL_MS);
 
   void logStartupDiagnostics().catch(showStartupError);
+
+  await ensureSettingsExist().catch(() => {
+    /* settings creation failure should not block app startup */
+  });
 
   await ensurePromptsExist().catch(() => {
     /* prompts dir creation failure should not block app startup */
@@ -667,6 +677,10 @@ app.whenReady().then(async () => {
     showPromptsEditor,
     onSessionUpdated: () => {
       void persistCurrentSession();
+    },
+    onSettingsUpdated: (settings) => {
+      suggestionWindow?.webContents.send("settings:update", settings);
+      refreshTrayMenu();
     }
   });
 
