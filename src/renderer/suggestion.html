@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ClawSense Suggestion</title>
+    <title>ClawBrow Suggestion</title>
     <link rel="stylesheet" href="./styles.css" />
     <link rel="stylesheet" href="./picker.css" />
     <link rel="stylesheet" href="./result.css" />
@@ -12,15 +12,20 @@
   </head>
   <body data-view="suggestion" data-state="picker">
     <main class="suggestion-shell" aria-live="polite">
-      <section class="suggestion-card" aria-label="ClawSense からの提案">
+      <section class="suggestion-card" aria-label="ClawBrow からの提案">
         <header class="suggestion-topbar">
           <div class="brand">
             <span class="brand-mark" aria-hidden="true"></span>
-            <p class="brand-name">ClawSense</p>
+            <p class="brand-name">ClawBrow</p>
           </div>
-          <button type="button" class="icon-button" id="top-close" aria-label="閉じる">
-            <svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-          </button>
+          <div class="window-actions" aria-label="ウィンドウ操作">
+            <button type="button" class="icon-button" id="top-compact" aria-label="小さくする">
+              <svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M16 3h3a2 2 0 0 1 2 2v3"/><path d="M8 21H5a2 2 0 0 1-2-2v-3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/><path d="M9 9h6v6H9z"/></svg>
+            </button>
+            <button type="button" class="icon-button" id="top-close" aria-label="閉じる">
+              <svg class="lucide-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </div>
         </header>
 
         <div class="state-picker" data-state-show="picker">

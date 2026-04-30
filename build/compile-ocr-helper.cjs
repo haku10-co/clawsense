@@ -5,7 +5,7 @@ const path = require("node:path");
 const root = path.join(__dirname, "..");
 const source = path.join(root, "native", "ocr-helper", "main.swift");
 const outDir = path.join(root, "native", "bin");
-const outFile = path.join(outDir, "ClawSenseOCR");
+const outFile = path.join(outDir, "ClawBrowOCR");
 const moduleCache = path.join(root, "native", ".build", "module-cache");
 
 if (process.platform !== "darwin") {

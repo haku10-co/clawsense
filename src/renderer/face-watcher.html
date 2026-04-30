@@ -2,15 +2,16 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <title>ClawSense Face Watcher</title>
+    <title>ClawBrow Face Watcher</title>
     <style>
       :root { color-scheme: dark; }
       html, body { margin: 0; padding: 0; background: #0b0f17; color: #d8e0f0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
       body[data-debug="0"] { background: #000; }
       body[data-debug="0"] video, body[data-debug="0"] .panel { display: none; }
-      .wrap { display: flex; flex-direction: column; gap: 12px; padding: 14px; height: 100vh; box-sizing: border-box; }
-      video { width: 100%; aspect-ratio: 4/3; object-fit: cover; background: #000; border-radius: 8px; transform: scaleX(-1); }
+      .wrap { display: flex; flex-direction: column; gap: 12px; padding: 14px; height: 100vh; box-sizing: border-box; overflow-y: auto; }
+      video { width: 100%; aspect-ratio: 4/3; object-fit: cover; background: #000; border-radius: 8px; transform: scaleX(-1); display: block; }
       .video-box { position: relative; width: 100%; }
+      .debug-canvas { position: absolute; inset: 0; width: 100%; height: 100%; border-radius: 8px; pointer-events: none; transform: scaleX(-1); }
       .video-overlay { position: absolute; left: 10px; right: 10px; bottom: 10px; padding: 8px 10px; border-radius: 7px; background: rgba(8, 12, 20, .78); color: #d8e0f0; font-size: 12px; line-height: 1.4; white-space: pre-wrap; pointer-events: none; }
       .video-overlay:empty { display: none; }
       .panel { background: #11182a; border: 1px solid #1f2840; border-radius: 8px; padding: 12px 14px; }
@@ -23,6 +24,10 @@
       .threshold { position: absolute; top: -3px; bottom: -3px; width: 2px; background: #ffffff80; }
       .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
       .grid .row { padding: 4px 0; }
+      .calibration-actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; }
+      .calibration-actions button { border: 1px solid #2b3654; border-radius: 7px; background: #172039; color: #d8e0f0; font: inherit; font-size: 12px; padding: 8px 10px; }
+      .calibration-actions button:active { background: #253052; }
+      .hint { color: #9aa4b8; font-size: 12px; line-height: 1.45; margin-top: 8px; }
       .status-ok { color: #5fd2a4; }
       .status-warn { color: #ff8b8b; }
       .status-muted { color: #9aa4b8; }
@@ -32,6 +37,7 @@
     <div class="wrap">
       <div class="video-box">
         <video id="video" autoplay muted playsinline></video>
+        <canvas class="debug-canvas" id="debugCanvas"></canvas>
         <div class="video-overlay" id="videoStatus"></div>
       </div>
       <div class="panel">
@@ -51,10 +57,28 @@
         <div class="row"><span class="label">delta</span><span class="val" id="delta">—</span></div>
         <div class="row"><span class="label">blend</span><span class="val" id="blend">—</span></div>
         <div class="row"><span class="label">brow geo</span><span class="val" id="geo">—</span></div>
+        <div class="row"><span class="label">inner dist</span><span class="val" id="innerDist">—</span></div>
+        <div class="row"><span class="label">base dist</span><span class="val" id="baseDist">—</span></div>
+        <div class="row"><span class="label">compression</span><span class="val" id="compression">—</span></div>
+        <div class="row"><span class="label">brow drop</span><span class="val" id="browDrop">—</span></div>
+        <div class="row"><span class="label">roll</span><span class="val" id="roll">—</span></div>
+        <div class="row"><span class="label">yaw</span><span class="val" id="yaw">—</span></div>
+        <div class="row"><span class="label">pitch</span><span class="val" id="pitch">—</span></div>
+        <div class="row"><span class="label">matrix yaw</span><span class="val" id="matrixYaw">—</span></div>
+        <div class="row"><span class="label">pose conf</span><span class="val" id="poseConf">—</span></div>
         <div class="row"><span class="label">baseline</span><span class="val" id="base">—</span></div>
         <div class="row"><span class="label">calibration</span><span class="val" id="cal">—</span></div>
         <div class="row"><span class="label">face</span><span class="val" id="fv">—</span></div>
         <div class="row"><span class="label">fps</span><span class="val" id="fps">—</span></div>
+      </div>
+      <div class="panel">
+        <div class="row"><span class="label">brow calibration</span><span class="val" id="trainStatus">auto</span></div>
+        <div class="calibration-actions">
+          <button id="captureNeutral" type="button">Neutral</button>
+          <button id="captureBrow" type="button">Brow</button>
+          <button id="resetTraining" type="button">Reset</button>
+        </div>
+        <div class="hint">Neutral: 普通の顔で押す / Brow: 眉を寄せたまま押す</div>
       </div>
     </div>
     <script type="module">
@@ -78,9 +102,16 @@
       const TARGET_FPS = 5;
       const LOG_INTERVAL_MS = 1000;
       const REPORT_INTERVAL_MS = 500;
+      const LEFT_BROW_INDICES = [70, 63, 105, 66, 107, 55, 65, 52, 53, 46];
+      const RIGHT_BROW_INDICES = [300, 293, 334, 296, 336, 285, 295, 282, 283, 276];
+      const LEFT_INNER_BROW_INDICES = [55, 65, 52, 53];
+      const RIGHT_INNER_BROW_INDICES = [285, 295, 282, 283];
+      const LEFT_UPPER_EYE_INDICES = [159, 158, 157, 160];
+      const RIGHT_UPPER_EYE_INDICES = [386, 385, 384, 387];
 
       let faceLandmarker = null;
       let videoEl = null;
+      let debugCanvas = null;
       let lastLogAt = 0;
       let lastReportAt = 0;
       let frameCount = 0;
@@ -88,19 +119,55 @@
       let calibrationStartAt = null;
       let baseline = null;
       let landmarkBaseline = null;
+      let landmarkBaselineLocked = false;
+      let trainedBrowProfile = null;
+      let captureMode = null;
+      let captureSamples = [];
       let smoothedScore = 0;
       let smoothedLandmarkScore = 0;
+      let lastGeometryFilterAt = null;
+      const geometryFilters = new Map();
       const CALIBRATION_MS = 3000;
-      const STRUGGLE_THRESHOLD = 0.45;
+      const LANDMARK_BASELINE_SAMPLES = 12;
+      const STRUGGLE_THRESHOLD = 0.3;
       const SCORE_SMOOTHING = 0.35;
       const BASELINE_ADAPT = 0.015;
+      const MAX_YAW_CORRECTION = 1.12;
+      const BROW_TRAINING_KEY = "clawbrow.browTraining.v1";
 
       function $(id) { return document.getElementById(id); }
       function fmt(n) { return (n ?? 0).toFixed(3); }
       function clamp01(n) { return Math.max(0, Math.min(1, n)); }
+      function median(values) {
+        const nums = values.filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+        if (nums.length === 0) return 0;
+        const mid = Math.floor(nums.length / 2);
+        return nums.length % 2 === 0 ? (nums[mid - 1] + nums[mid]) / 2 : nums[mid];
+      }
+      function clamp(n, min, max) {
+        return Math.max(min, Math.min(max, n));
+      }
       function setVideoStatus(message) {
         const el = $("videoStatus");
         if (el) el.textContent = message || "";
+      }
+
+      function updateTrainingStatus(message) {
+        const el = $("trainStatus");
+        if (!el) return;
+        if (message) {
+          el.textContent = message;
+          return;
+        }
+        if (captureMode) {
+          el.textContent = `${captureMode} ${captureSamples.length}/${LANDMARK_BASELINE_SAMPLES}`;
+        } else if (trainedBrowProfile?.ready) {
+          el.textContent = "trained";
+        } else if (landmarkBaselineLocked) {
+          el.textContent = "neutral only";
+        } else {
+          el.textContent = "auto";
+        }
       }
       function updateUi(reading, faceVisible) {
         const score = reading ? reading.score : 0;
@@ -137,9 +204,23 @@
           $("delta").textContent = fmt(reading.maxDelta);
           $("blend").textContent = fmt(reading.blendshapeScore);
           $("geo").textContent = reading.landmark ? fmt(reading.landmark.score) : "—";
+          $("innerDist").textContent = reading.landmark ? fmt(reading.landmark.geometry.yawCorrectedInnerBrowDistance) : "—";
+          $("baseDist").textContent = reading.landmark ? fmt(reading.landmark.baseline.innerBrowDistance) : "—";
+          $("compression").textContent = reading.landmark ? fmt(reading.landmark.compression) : "—";
+          $("browDrop").textContent = reading.landmark ? fmt(reading.landmark.browDrop) : "—";
+          $("roll").textContent = reading.landmark ? `${reading.landmark.geometry.rollDeg.toFixed(1)}°` : "—";
+          $("yaw").textContent = reading.landmark ? `${reading.landmark.geometry.yawDeg.toFixed(1)}°` : "—";
+          $("pitch").textContent = reading.landmark ? `${(reading.landmark.geometry.pitchDeg ?? 0).toFixed(1)}°` : "—";
+          $("matrixYaw").textContent =
+            reading.landmark && Number.isFinite(reading.landmark.geometry.matrixYawDeg)
+              ? `${reading.landmark.geometry.matrixYawDeg.toFixed(1)}°`
+              : "—";
+          $("poseConf").textContent = reading.landmark ? fmt(reading.landmark.confidence) : "—";
           $("base").textContent = fmt(reading.baselineScore);
           $("cal").textContent = reading.calibrated ? "done" : `${Math.round(reading.calibrationProgress * 100)}%`;
         }
+        const threshold = $("thresholdMarker");
+        if (threshold) threshold.style.left = `${(STRUGGLE_THRESHOLD * 100).toFixed(1)}%`;
         $("fv").textContent = faceVisible ? "yes" : "no";
         frameCount++;
         const now = performance.now();
@@ -148,6 +229,136 @@
           frameCount = 0;
           lastFpsAt = now;
         }
+        updateTrainingStatus();
+      }
+
+      function syncDebugCanvas() {
+        if (!debugCanvas || !videoEl) return null;
+        const width = videoEl.videoWidth || 0;
+        const height = videoEl.videoHeight || 0;
+        if (!width || !height) return null;
+        if (debugCanvas.width !== width || debugCanvas.height !== height) {
+          debugCanvas.width = width;
+          debugCanvas.height = height;
+        }
+        return debugCanvas.getContext("2d");
+      }
+
+      function clearDebugOverlay() {
+        const ctx = syncDebugCanvas();
+        if (!ctx || !debugCanvas) return;
+        ctx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+      }
+
+      class OneEuroFilter {
+        constructor({ minCutoff = 1, beta = 0, dCutoff = 1 } = {}) {
+          this.minCutoff = minCutoff;
+          this.beta = beta;
+          this.dCutoff = dCutoff;
+          this.x = null;
+          this.dx = 0;
+        }
+
+        alpha(cutoff, dt) {
+          const tau = 1 / (2 * Math.PI * cutoff);
+          return 1 / (1 + tau / Math.max(0.001, dt));
+        }
+
+        filter(value, dt) {
+          if (!Number.isFinite(value)) return this.x ?? 0;
+          if (this.x === null) {
+            this.x = value;
+            this.dx = 0;
+            return value;
+          }
+          const derivative = (value - this.x) / Math.max(0.001, dt);
+          const dAlpha = this.alpha(this.dCutoff, dt);
+          this.dx += dAlpha * (derivative - this.dx);
+          const cutoff = this.minCutoff + this.beta * Math.abs(this.dx);
+          const xAlpha = this.alpha(cutoff, dt);
+          this.x += xAlpha * (value - this.x);
+          return this.x;
+        }
+      }
+
+      function oneEuro(name, value, dt, opts) {
+        if (!geometryFilters.has(name)) {
+          geometryFilters.set(name, new OneEuroFilter(opts));
+        }
+        return geometryFilters.get(name).filter(value, dt);
+      }
+
+      function drawPoint(ctx, point, color, radius = 3) {
+        if (!point) return;
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+        ctx.fillStyle = color;
+        ctx.fill();
+      }
+
+      function drawRect(ctx, rect, color) {
+        if (!rect) return;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(rect.x, rect.y, rect.width, rect.height);
+      }
+
+      function drawLine(ctx, a, b, color, width = 2) {
+        if (!a || !b) return;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        ctx.stroke();
+      }
+
+      function drawDebugOverlay(reading, faceVisible) {
+        const ctx = syncDebugCanvas();
+        if (!ctx || !debugCanvas) return;
+        ctx.clearRect(0, 0, debugCanvas.width, debugCanvas.height);
+        if (!faceVisible || !reading || !reading.landmark || !reading.landmark.geometry.debug) {
+          if (!faceVisible) setVideoStatus("no face");
+          return;
+        }
+
+        const landmark = reading.landmark;
+        const geometry = landmark.geometry;
+        const debug = geometry.debug;
+        drawRect(ctx, debug.leftRoi, "rgba(95, 210, 164, .95)");
+        drawRect(ctx, debug.rightRoi, "rgba(110, 124, 255, .95)");
+        drawLine(ctx, debug.leftEyeCenter, debug.rightEyeCenter, "rgba(255,255,255,.72)", 2);
+        drawLine(ctx, debug.leftInnerBrow, debug.rightInnerBrow, "rgba(249,199,79,.95)", 3);
+
+        const baselinePx = landmark.baseline.innerBrowDistance * geometry.faceScale;
+        const baselineY = debug.eyeCenter.y - geometry.faceScale * 0.48;
+        drawLine(
+          ctx,
+          { x: debug.eyeCenter.x - baselinePx / 2, y: baselineY },
+          { x: debug.eyeCenter.x + baselinePx / 2, y: baselineY },
+          "rgba(255,255,255,.50)",
+          3
+        );
+
+        for (const point of debug.leftBrowPoints) drawPoint(ctx, point, "rgba(95, 210, 164, .95)", 2.6);
+        for (const point of debug.rightBrowPoints) drawPoint(ctx, point, "rgba(110, 124, 255, .95)", 2.6);
+        drawPoint(ctx, debug.leftInnerBrow, "rgba(249,199,79,.95)", 4);
+        drawPoint(ctx, debug.rightInnerBrow, "rgba(249,199,79,.95)", 4);
+        drawPoint(ctx, debug.nose, "rgba(255,107,107,.85)", 3);
+
+        if (landmark.baselineReady === false) {
+          setVideoStatus(
+            `baseline locking ${Math.round((landmark.calibrationProgress ?? 0) * 100)}%  ` +
+            `正面で少し止まってください\nroll ${geometry.rollDeg.toFixed(1)}°  yaw ${geometry.yawDeg.toFixed(1)}°  pitch ${(geometry.pitchDeg ?? 0).toFixed(1)}°`
+          );
+          return;
+        }
+
+        setVideoStatus(
+          `brow compression ${fmt(landmark.compression)}  drop ${fmt(landmark.browDrop)}  trained ${landmark.trainedScore === null ? "—" : fmt(landmark.trainedScore)}  score ${fmt(reading.score)}\n` +
+          `inner ${fmt(geometry.yawCorrectedInnerBrowDistance)} / base ${fmt(landmark.baseline.innerBrowDistance)}  ` +
+          `roll ${geometry.rollDeg.toFixed(1)}°  yaw ${geometry.yawDeg.toFixed(1)}°  pitch ${(geometry.pitchDeg ?? 0).toFixed(1)}°  conf ${fmt(landmark.confidence)}`
+        );
       }
 
       function copyBreakdown(values) {
@@ -196,41 +407,143 @@
       }
 
       function averageLandmarks(samples) {
-        const total = {
-          innerBrowDistance: 0,
-          browEyeGap: 0,
-          browEyeGapLeft: 0,
-          browEyeGapRight: 0,
-          asymmetry: 0,
-          faceScale: 0
-        };
-        samples.forEach((sample) => {
-          total.innerBrowDistance += sample.innerBrowDistance;
-          total.browEyeGap += sample.browEyeGap;
-          total.browEyeGapLeft += sample.browEyeGapLeft;
-          total.browEyeGapRight += sample.browEyeGapRight;
-          total.asymmetry += sample.asymmetry;
-          total.faceScale += sample.faceScale;
-        });
-        const count = Math.max(1, samples.length);
         return {
-          innerBrowDistance: total.innerBrowDistance / count,
-          browEyeGap: total.browEyeGap / count,
-          browEyeGapLeft: total.browEyeGapLeft / count,
-          browEyeGapRight: total.browEyeGapRight / count,
-          asymmetry: total.asymmetry / count,
-          faceScale: total.faceScale / count
+          innerBrowDistance: median(samples.map((sample) => sample.innerBrowDistance)),
+          yawCorrectedInnerBrowDistance: median(
+            samples.map((sample) => sample.yawCorrectedInnerBrowDistance ?? sample.innerBrowDistance)
+          ),
+          browEyeGap: median(samples.map((sample) => sample.browEyeGap)),
+          browEyeGapLeft: median(samples.map((sample) => sample.browEyeGapLeft)),
+          browEyeGapRight: median(samples.map((sample) => sample.browEyeGapRight)),
+          asymmetry: median(samples.map((sample) => sample.asymmetry)),
+          faceScale: median(samples.map((sample) => sample.faceScale)),
+          rollDeg: median(samples.map((sample) => sample.rollDeg ?? 0)),
+          yawDeg: median(samples.map((sample) => sample.yawDeg ?? 0)),
+          pitchDeg: median(samples.map((sample) => sample.pitchDeg ?? 0)),
+          approxYawDeg: median(samples.map((sample) => sample.approxYawDeg ?? sample.yawDeg ?? 0)),
+          matrixYawDeg: median(samples.map((sample) => sample.matrixYawDeg ?? sample.yawDeg ?? 0))
         };
+      }
+
+      function movementVector(geometry, neutral) {
+        const neutralInner = neutral.yawCorrectedInnerBrowDistance ?? neutral.innerBrowDistance;
+        const currentInner = geometry.yawCorrectedInnerBrowDistance ?? geometry.innerBrowDistance;
+        return [
+          (neutralInner - currentInner) / 0.035,
+          (neutral.browEyeGap - geometry.browEyeGap) / 0.035,
+          (neutral.browEyeGapLeft - geometry.browEyeGapLeft) / 0.035,
+          (neutral.browEyeGapRight - geometry.browEyeGapRight) / 0.035
+        ];
+      }
+
+      function buildBrowProfile(samples, neutral) {
+        const vectors = samples.map((sample) => movementVector(sample, neutral));
+        const vector = [0, 1, 2, 3].map((idx) => median(vectors.map((v) => v[idx])));
+        const magnitude = Math.hypot(...vector);
+        return {
+          ready: magnitude >= 0.18,
+          vector,
+          magnitude,
+          createdAt: Date.now()
+        };
+      }
+
+      function trainedBrowScore(geometry) {
+        if (!trainedBrowProfile?.ready || !landmarkBaseline) return null;
+        const current = movementVector(geometry, landmarkBaseline);
+        const target = trainedBrowProfile.vector;
+        const denom = target.reduce((acc, n) => acc + n * n, 0);
+        if (denom < 0.03) return null;
+        const dot = current.reduce((acc, n, idx) => acc + n * target[idx], 0);
+        const raw = dot / denom;
+        const sidewaysPenalty = Math.max(0, Math.hypot(...current) - Math.abs(dot) / Math.sqrt(denom));
+        return clamp01(raw - sidewaysPenalty * 0.18);
+      }
+
+      function persistBrowTraining() {
+        try {
+          if (!landmarkBaseline || !trainedBrowProfile?.ready) return;
+          localStorage.setItem(
+            BROW_TRAINING_KEY,
+            JSON.stringify({
+              landmarkBaseline,
+              trainedBrowProfile
+            })
+          );
+        } catch (err) {
+          console.warn("[face] failed to save brow training:", err);
+        }
+      }
+
+      function loadBrowTraining() {
+        try {
+          const raw = localStorage.getItem(BROW_TRAINING_KEY);
+          if (!raw) return;
+          const parsed = JSON.parse(raw);
+          if (!parsed?.landmarkBaseline || !parsed?.trainedBrowProfile?.ready) return;
+          landmarkBaseline = parsed.landmarkBaseline;
+          trainedBrowProfile = parsed.trainedBrowProfile;
+          landmarkBaselineLocked = true;
+          updateTrainingStatus("trained");
+        } catch (err) {
+          console.warn("[face] failed to load brow training:", err);
+        }
+      }
+
+      function beginCapture(mode) {
+        captureMode = mode;
+        captureSamples = [];
+        updateTrainingStatus(`${mode} 0/${LANDMARK_BASELINE_SAMPLES}`);
+      }
+
+      function resetTraining() {
+        captureMode = null;
+        captureSamples = [];
+        landmarkCalibrationSamples.length = 0;
+        landmarkBaseline = null;
+        landmarkBaselineLocked = false;
+        trainedBrowProfile = null;
+        smoothedLandmarkScore = 0;
+        try {
+          localStorage.removeItem(BROW_TRAINING_KEY);
+        } catch {}
+        updateTrainingStatus("reset");
+      }
+
+      function updateCalibrationCapture(geometry) {
+        if (!captureMode || !geometry || !stableBaselinePose(geometry)) return;
+        captureSamples.push({ ...geometry });
+        if (captureSamples.length < LANDMARK_BASELINE_SAMPLES) return;
+
+        if (captureMode === "neutral") {
+          landmarkBaseline = averageLandmarks(captureSamples);
+          landmarkBaselineLocked = true;
+          trainedBrowProfile = null;
+          try {
+            localStorage.removeItem(BROW_TRAINING_KEY);
+          } catch {}
+          updateTrainingStatus("neutral locked");
+        } else if (captureMode === "brow" && landmarkBaseline) {
+          trainedBrowProfile = buildBrowProfile(captureSamples, landmarkBaseline);
+          updateTrainingStatus(trainedBrowProfile.ready ? "trained" : "brow too weak");
+          persistBrowTraining();
+        }
+
+        captureMode = null;
+        captureSamples = [];
       }
 
       function adaptLandmarkBaseline(geometry) {
         if (!landmarkBaseline || !geometry) return;
         landmarkBaseline.innerBrowDistance += (geometry.innerBrowDistance - landmarkBaseline.innerBrowDistance) * BASELINE_ADAPT;
+        landmarkBaseline.yawCorrectedInnerBrowDistance += ((geometry.yawCorrectedInnerBrowDistance ?? geometry.innerBrowDistance) - landmarkBaseline.yawCorrectedInnerBrowDistance) * BASELINE_ADAPT;
         landmarkBaseline.browEyeGap += (geometry.browEyeGap - landmarkBaseline.browEyeGap) * BASELINE_ADAPT;
         landmarkBaseline.browEyeGapLeft += (geometry.browEyeGapLeft - landmarkBaseline.browEyeGapLeft) * BASELINE_ADAPT;
         landmarkBaseline.browEyeGapRight += (geometry.browEyeGapRight - landmarkBaseline.browEyeGapRight) * BASELINE_ADAPT;
         landmarkBaseline.asymmetry += (geometry.asymmetry - landmarkBaseline.asymmetry) * BASELINE_ADAPT;
         landmarkBaseline.faceScale += (geometry.faceScale - landmarkBaseline.faceScale) * BASELINE_ADAPT;
+        landmarkBaseline.rollDeg += ((geometry.rollDeg ?? 0) - landmarkBaseline.rollDeg) * BASELINE_ADAPT;
+        landmarkBaseline.yawDeg += ((geometry.yawDeg ?? 0) - landmarkBaseline.yawDeg) * BASELINE_ADAPT;
       }
 
       function scoreFromBreakdown(values) {
@@ -258,33 +571,27 @@
         }
 
         const deltas = {
-          browDown: normalizedDelta(values.browDown, baseline.browDown, 0.06, 0.22),
-          browInnerUp: normalizedDelta(values.browInnerUp, baseline.browInnerUp, 0.08, 0.30),
+          browDown: normalizedDelta(values.browDown, baseline.browDown, 0.025, 0.12),
+          browInnerUp: normalizedDelta(values.browInnerUp, baseline.browInnerUp, 0.035, 0.16),
           mouthFrown: normalizedDelta(values.mouthFrown, baseline.mouthFrown, 0.05, 0.22),
           eyeSquint: normalizedDelta(values.eyeSquint, baseline.eyeSquint, 0.07, 0.28)
         };
         const expressionScore = Math.max(
-          deltas.browDown * 0.95,
-          deltas.mouthFrown * 0.9,
-          deltas.eyeSquint * 0.65,
-          deltas.browInnerUp * 0.55
+          deltas.browDown * 0.72,
+          deltas.browInnerUp * 0.18
         );
         const combinedEvidence = clamp01(
-          (deltas.browDown + deltas.mouthFrown + deltas.eyeSquint + deltas.browInnerUp * 0.6) / 2.4
+          (deltas.browDown * 0.85 + deltas.browInnerUp * 0.15) / 1.0
         );
         const instantScore = clamp01(expressionScore * 0.8 + combinedEvidence * 0.2);
         smoothedScore += (instantScore - smoothedScore) * SCORE_SMOOTHING;
-
-        if (smoothedScore < STRUGGLE_THRESHOLD * 0.55) {
-          adaptBaseline(values);
-        }
 
         return {
           score: smoothedScore,
           blendshapeScore: smoothedScore,
           rawScore: rawStruggleScore(values),
           baselineScore: rawStruggleScore(baseline),
-          maxDelta: Math.max(deltas.browDown, deltas.browInnerUp, deltas.mouthFrown, deltas.eyeSquint),
+          maxDelta: Math.max(deltas.browDown, deltas.browInnerUp),
           calibrated: true,
           calibrationProgress: 1,
           breakdown: values
@@ -324,7 +631,102 @@
         return Math.hypot(a.x - b.x, a.y - b.y);
       }
 
-      function geometryFromLandmarks(landmarks) {
+      function boundingBox(points, pad) {
+        const valid = points.filter(Boolean);
+        if (valid.length === 0) return null;
+        const xs = valid.map((p) => p.x);
+        const ys = valid.map((p) => p.y);
+        const minX = Math.max(0, Math.min(...xs) - pad);
+        const minY = Math.max(0, Math.min(...ys) - pad);
+        const maxX = Math.min(videoEl?.videoWidth || 1, Math.max(...xs) + pad);
+        const maxY = Math.min(videoEl?.videoHeight || 1, Math.max(...ys) + pad);
+        return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+      }
+
+      function estimateYawDeg(nose, eyeCenter, scale) {
+        if (!nose || !eyeCenter || !scale) return 0;
+        const ratio = Math.max(-0.65, Math.min(0.65, (nose.x - eyeCenter.x) / scale));
+        return ratio * 48;
+      }
+
+      function matrixValues(matrix) {
+        if (!matrix) return null;
+        const raw = matrix.data ?? matrix.packedData ?? matrix.matrix ?? matrix;
+        if (!raw || typeof raw.length !== "number" || raw.length < 16) return null;
+        return Array.from(raw).slice(0, 16).map(Number);
+      }
+
+      function poseFromMatrix(matrix) {
+        const values = matrixValues(matrix);
+        if (!values) return null;
+
+        function at(row, col) {
+          return values[col * 4 + row];
+        }
+
+        const c0 = Math.hypot(at(0, 0), at(1, 0), at(2, 0)) || 1;
+        const c1 = Math.hypot(at(0, 1), at(1, 1), at(2, 1)) || 1;
+        const c2 = Math.hypot(at(0, 2), at(1, 2), at(2, 2)) || 1;
+        const scale = (c0 + c1 + c2) / 3;
+        const r00 = at(0, 0) / c0;
+        const r10 = at(1, 0) / c0;
+        const r20 = at(2, 0) / c0;
+        const r21 = at(2, 1) / c1;
+        const r22 = at(2, 2) / c2;
+        const yaw = Math.asin(clamp(-r20, -1, 1));
+        const pitch = Math.atan2(r21, r22);
+        const roll = Math.atan2(r10, r00);
+        return {
+          yawDeg: (yaw * 180) / Math.PI,
+          pitchDeg: (pitch * 180) / Math.PI,
+          rollDeg: (roll * 180) / Math.PI,
+          scale
+        };
+      }
+
+      function selectYaw(matrixPose, approxYawDeg) {
+        if (!matrixPose || !Number.isFinite(matrixPose.yawDeg)) {
+          return { yawDeg: approxYawDeg, matrixYawDeg: null, poseConsistent: true };
+        }
+        const rawYaw = clamp(matrixPose.yawDeg, -45, 45);
+        const flippedYaw = -rawYaw;
+        const rawDelta = Math.abs(rawYaw - approxYawDeg);
+        const flippedDelta = Math.abs(flippedYaw - approxYawDeg);
+        const matrixYawDeg = flippedDelta + 2 < rawDelta ? flippedYaw : rawYaw;
+        const poseConsistent = Math.abs(matrixYawDeg - approxYawDeg) <= 18;
+        return {
+          yawDeg: poseConsistent ? matrixYawDeg : approxYawDeg,
+          matrixYawDeg,
+          poseConsistent
+        };
+      }
+
+      function stableBaselinePose(geometry) {
+        if (!geometry) return false;
+        return geometry.rollDeg <= 14 && Math.abs(geometry.yawDeg) <= 16 && Math.abs(geometry.pitchDeg ?? 0) <= 14 && geometry.faceScale >= 35;
+      }
+
+      function filterGeometry(geometry) {
+        const now = performance.now();
+        const dt = lastGeometryFilterAt ? (now - lastGeometryFilterAt) / 1000 : 1 / TARGET_FPS;
+        lastGeometryFilterAt = now;
+        const opts = { minCutoff: 1.0, beta: 4.0, dCutoff: 1.0 };
+        return {
+          ...geometry,
+          innerBrowDistance: oneEuro("innerBrowDistance", geometry.innerBrowDistance, dt, opts),
+          yawCorrectedInnerBrowDistance: oneEuro(
+            "yawCorrectedInnerBrowDistance",
+            geometry.yawCorrectedInnerBrowDistance,
+            dt,
+            opts
+          ),
+          browEyeGap: oneEuro("browEyeGap", geometry.browEyeGap, dt, opts),
+          browEyeGapLeft: oneEuro("browEyeGapLeft", geometry.browEyeGapLeft, dt, opts),
+          browEyeGapRight: oneEuro("browEyeGapRight", geometry.browEyeGapRight, dt, opts)
+        };
+      }
+
+      function geometryFromLandmarks(landmarks, transformMatrix) {
         if (!landmarks || landmarks.length === 0) return null;
         const leftEyeCenter = avgPoint([33, 133, 159, 145].map((i) => pointFromLandmark(landmarks, i)));
         const rightEyeCenter = avgPoint([263, 362, 386, 374].map((i) => pointFromLandmark(landmarks, i)));
@@ -337,6 +739,17 @@
         const roll = Math.atan2(rightEyeCenter.y - leftEyeCenter.y, rightEyeCenter.x - leftEyeCenter.x);
         const scale = dist(leftEyeCenter, rightEyeCenter);
         if (!Number.isFinite(scale) || scale < 20) return null;
+        const nose = pointFromLandmark(landmarks, 1);
+        const approxYawDeg = estimateYawDeg(nose, eyeCenter, scale);
+        const matrixPose = poseFromMatrix(transformMatrix);
+        const selectedYaw = selectYaw(matrixPose, approxYawDeg);
+        const yawDeg = selectedYaw.yawDeg;
+        const pitchDeg = clamp(matrixPose?.pitchDeg ?? 0, -45, 45);
+        const matrixRollDeg = matrixPose ? Math.abs(clamp(matrixPose.rollDeg, -60, 60)) : null;
+        const yawCorrection = Math.min(
+          MAX_YAW_CORRECTION,
+          1 / Math.max(0.9, Math.cos(Math.min(Math.abs(yawDeg), 28) * Math.PI / 180))
+        );
 
         function cluster(indices) {
           const points = indices
@@ -346,69 +759,164 @@
           return avgPoint(points);
         }
 
-        const leftInnerBrow = cluster([55, 65, 52, 53]);
-        const rightInnerBrow = cluster([285, 295, 282, 283]);
-        const leftBrow = cluster([70, 63, 105, 66, 107, 55, 65, 52, 53, 46]);
-        const rightBrow = cluster([300, 293, 334, 296, 336, 285, 295, 282, 283, 276]);
-        const leftUpperEye = cluster([159, 158, 157, 160]);
-        const rightUpperEye = cluster([386, 385, 384, 387]);
+        const leftBrowPoints = LEFT_BROW_INDICES.map((i) => pointFromLandmark(landmarks, i)).filter(Boolean);
+        const rightBrowPoints = RIGHT_BROW_INDICES.map((i) => pointFromLandmark(landmarks, i)).filter(Boolean);
+        const leftInnerBrow = cluster(LEFT_INNER_BROW_INDICES);
+        const rightInnerBrow = cluster(RIGHT_INNER_BROW_INDICES);
+        const leftBrow = cluster(LEFT_BROW_INDICES);
+        const rightBrow = cluster(RIGHT_BROW_INDICES);
+        const leftUpperEye = cluster(LEFT_UPPER_EYE_INDICES);
+        const rightUpperEye = cluster(RIGHT_UPPER_EYE_INDICES);
         if (!leftInnerBrow || !rightInnerBrow || !leftBrow || !rightBrow || !leftUpperEye || !rightUpperEye) {
           return null;
         }
 
         const leftGap = (leftUpperEye.y - leftBrow.y) / scale;
         const rightGap = (rightUpperEye.y - rightBrow.y) / scale;
-        return {
-          innerBrowDistance: Math.abs(rightInnerBrow.x - leftInnerBrow.x) / scale,
+        const innerBrowDistance = Math.abs(rightInnerBrow.x - leftInnerBrow.x) / scale;
+        const yawCorrectedInnerBrowDistance = innerBrowDistance * yawCorrection;
+        return filterGeometry({
+          innerBrowDistance,
+          yawCorrectedInnerBrowDistance,
           browEyeGap: (leftGap + rightGap) / 2,
           browEyeGapLeft: leftGap,
           browEyeGapRight: rightGap,
           asymmetry: Math.abs(leftGap - rightGap),
           faceScale: scale,
-          rollDeg: Math.abs((roll * 180) / Math.PI)
-        };
+          rollDeg: Math.abs((roll * 180) / Math.PI),
+          yawDeg,
+          approxYawDeg,
+          matrixYawDeg: selectedYaw.matrixYawDeg,
+          pitchDeg,
+          matrixRollDeg,
+          poseConsistent: selectedYaw.poseConsistent,
+          yawCorrection,
+          debug: {
+            eyeCenter,
+            leftEyeCenter,
+            rightEyeCenter,
+            nose,
+            leftBrowPoints,
+            rightBrowPoints,
+            leftRoi: boundingBox(leftBrowPoints, scale * 0.16),
+            rightRoi: boundingBox(rightBrowPoints, scale * 0.16),
+            leftInnerBrow: rotatePoint(leftInnerBrow, eyeCenter, roll),
+            rightInnerBrow: rotatePoint(rightInnerBrow, eyeCenter, roll)
+          }
+        });
       }
 
       function scoreLandmarkGeometry(geometry, calibrated) {
         if (!geometry) {
           return null;
         }
-        if (!landmarkBaseline) {
-          landmarkBaseline = { ...geometry };
-        }
-        if (!calibrated) {
-          landmarkCalibrationSamples.push({ ...geometry });
-          landmarkBaseline = averageLandmarks(landmarkCalibrationSamples);
+        if (!landmarkBaselineLocked) {
+          if (stableBaselinePose(geometry)) {
+            landmarkCalibrationSamples.push({ ...geometry });
+            landmarkBaseline = averageLandmarks(landmarkCalibrationSamples);
+            if (landmarkCalibrationSamples.length >= LANDMARK_BASELINE_SAMPLES) {
+              landmarkBaselineLocked = true;
+            }
+          } else if (!landmarkBaseline) {
+            landmarkBaseline = { ...geometry };
+          }
+          const progress = clamp01(landmarkCalibrationSamples.length / LANDMARK_BASELINE_SAMPLES);
+          const waitingForPose = !stableBaselinePose(geometry);
+          if (landmarkBaselineLocked) {
+            updateTrainingStatus(trainedBrowProfile?.ready ? "trained" : "neutral only");
+          }
           smoothedLandmarkScore = 0;
           return {
             score: 0,
             compression: 0,
             browDrop: 0,
             browRaise: 0,
+            confidence: waitingForPose ? 0 : 1,
+            yawDeltaDeg: 0,
+            poseOk: !waitingForPose,
+            baselineReady: false,
+            calibrationProgress: progress,
+            geometry,
+            baseline: {
+              innerBrowDistance: landmarkBaseline.yawCorrectedInnerBrowDistance ?? landmarkBaseline.innerBrowDistance,
+              rawInnerBrowDistance: landmarkBaseline.innerBrowDistance,
+              browEyeGap: landmarkBaseline.browEyeGap,
+              yawDeg: landmarkBaseline.yawDeg ?? 0,
+              rollDeg: landmarkBaseline.rollDeg ?? 0,
+              pitchDeg: landmarkBaseline.pitchDeg ?? 0
+            }
+          };
+        }
+        if (!calibrated) {
+          smoothedLandmarkScore = 0;
+          return {
+            score: 0,
+            compression: 0,
+            browDrop: 0,
+            browRaise: 0,
+            confidence: 1,
+            yawDeltaDeg: 0,
             poseOk: true,
-            geometry
+            baselineReady: true,
+            calibrationProgress: clamp01((performance.now() - calibrationStartAt) / CALIBRATION_MS),
+            geometry,
+            baseline: {
+              innerBrowDistance: landmarkBaseline.yawCorrectedInnerBrowDistance ?? landmarkBaseline.innerBrowDistance,
+              rawInnerBrowDistance: landmarkBaseline.innerBrowDistance,
+              browEyeGap: landmarkBaseline.browEyeGap,
+              yawDeg: landmarkBaseline.yawDeg ?? 0,
+              rollDeg: landmarkBaseline.rollDeg ?? 0,
+              pitchDeg: landmarkBaseline.pitchDeg ?? 0
+            }
           };
         }
 
-        const compression = normalizedDelta(landmarkBaseline.innerBrowDistance - geometry.innerBrowDistance, 0, 0.015, 0.07);
-        const browDrop = normalizedDelta(landmarkBaseline.browEyeGap - geometry.browEyeGap, 0, 0.018, 0.07);
+        const baselineInnerDistance = landmarkBaseline.yawCorrectedInnerBrowDistance ?? landmarkBaseline.innerBrowDistance;
+        const currentInnerDistance = geometry.yawCorrectedInnerBrowDistance ?? geometry.innerBrowDistance;
+        const yawDeltaDeg = geometry.yawDeg - (landmarkBaseline.yawDeg ?? 0);
+        const pitchDeltaDeg = (geometry.pitchDeg ?? 0) - (landmarkBaseline.pitchDeg ?? 0);
+        const compression = normalizedDelta(baselineInnerDistance - currentInnerDistance, 0, 0.004, 0.035);
+        const browDrop = normalizedDelta(landmarkBaseline.browEyeGap - geometry.browEyeGap, 0, 0.006, 0.035);
         const browRaise = normalizedDelta(geometry.browEyeGap - landmarkBaseline.browEyeGap, 0, 0.025, 0.09);
         const asymmetryPenalty = clamp01((geometry.asymmetry - landmarkBaseline.asymmetry - 0.04) / 0.12) * 0.25;
-        const poseOk = geometry.rollDeg <= 25 && geometry.faceScale >= landmarkBaseline.faceScale * 0.55;
+        const rollConfidence = 1 - clamp01((geometry.rollDeg - 12) / 18);
+        const yawConfidence = 1 - clamp01((Math.abs(yawDeltaDeg) - 12) / 18);
+        const pitchConfidence = 1 - clamp01((Math.abs(pitchDeltaDeg) - 10) / 16);
+        const scaleConfidence = clamp01((geometry.faceScale / Math.max(1, landmarkBaseline.faceScale) - 0.55) / 0.35);
+        const consistencyConfidence = geometry.poseConsistent === false ? 0.55 : 1;
+        const confidence = clamp01(
+          (rollConfidence * 0.25 + yawConfidence * 0.35 + pitchConfidence * 0.2 + scaleConfidence * 0.2) *
+            consistencyConfidence
+        );
+        const poseOk = confidence >= 0.35 && geometry.rollDeg <= 32 && Math.abs(yawDeltaDeg) <= 28 && Math.abs(pitchDeltaDeg) <= 24;
+        const compressionGate = clamp01((compression - 0.015) / 0.08);
+        const trainedScore = trainedBrowScore(geometry);
+        const heuristicScore = clamp01((compression * 0.9 + browDrop * 0.1 - asymmetryPenalty) * (0.35 + compressionGate * 0.65));
         const instant = poseOk
-          ? clamp01(compression * 0.58 + browDrop * 0.27 + browRaise * 0.15 - asymmetryPenalty)
+          ? clamp01((trainedScore ?? heuristicScore) * confidence)
           : 0;
         smoothedLandmarkScore += (instant - smoothedLandmarkScore) * SCORE_SMOOTHING;
-        if (smoothedLandmarkScore < STRUGGLE_THRESHOLD * 0.5) {
-          adaptLandmarkBaseline(geometry);
-        }
         return {
           score: smoothedLandmarkScore,
           compression,
           browDrop,
           browRaise,
+          confidence,
+          yawDeltaDeg,
+          pitchDeltaDeg,
+          trainedScore,
           poseOk,
-          geometry
+          baselineReady: true,
+          calibrationProgress: 1,
+          geometry,
+          baseline: {
+            innerBrowDistance: baselineInnerDistance,
+            rawInnerBrowDistance: landmarkBaseline.innerBrowDistance,
+            browEyeGap: landmarkBaseline.browEyeGap,
+            yawDeg: landmarkBaseline.yawDeg ?? 0,
+            rollDeg: landmarkBaseline.rollDeg ?? 0,
+            pitchDeg: landmarkBaseline.pitchDeg ?? 0
+          }
         };
       }
 
@@ -421,12 +929,15 @@
           };
         }
         const fusedScore = landmark.poseOk
-          ? clamp01(blendReading.blendshapeScore * 0.65 + landmark.score * 0.35)
-          : blendReading.blendshapeScore;
+          ? clamp01(landmark.score * 0.82 + blendReading.blendshapeScore * 0.18)
+          : 0;
+        const landmarkReady = landmark.baselineReady !== false;
         return {
           ...blendReading,
           score: fusedScore,
           fusedScore,
+          calibrated: blendReading.calibrated && landmarkReady,
+          calibrationProgress: Math.min(blendReading.calibrationProgress, landmark.calibrationProgress ?? 1),
           landmark
         };
       }
@@ -577,6 +1088,16 @@
 
       async function init() {
         videoEl = document.getElementById("video");
+        debugCanvas = document.getElementById("debugCanvas");
+        $("captureNeutral")?.addEventListener("click", () => beginCapture("neutral"));
+        $("captureBrow")?.addEventListener("click", () => beginCapture("brow"));
+        $("resetTraining")?.addEventListener("click", resetTraining);
+        window.addEventListener("keydown", (event) => {
+          if (event.key.toLowerCase() === "n") beginCapture("neutral");
+          if (event.key.toLowerCase() === "b") beginCapture("brow");
+          if (event.key.toLowerCase() === "r") resetTraining();
+        });
+        loadBrowTraining();
 
         try {
           setVideoStatus("loading face model...");
@@ -597,7 +1118,7 @@
           console.error(`[face] camera unavailable: ${name} — ${msg}`);
           const permissionHint =
             name === "NotAllowedError"
-              ? "\nSystem Settings > Privacy & Security > Camera > ClawSense を ON にして再起動"
+              ? "\nSystem Settings > Privacy & Security > Camera > ClawBrow を ON にして再起動"
               : "";
           setVideoStatus(`camera unavailable: ${name}\n${msg}${permissionHint}`);
           return;
@@ -627,14 +1148,19 @@
           if (blendshapes.length === 0 || landmarks.length === 0) {
             reportFace(null, false);
             updateUi(null, false);
+            drawDebugOverlay(null, false);
             return;
           }
           const categories = blendshapes[0].categories ?? [];
+          const transformMatrix = (result.facialTransformationMatrixes ?? [])[0] ?? null;
           const blendReading = scoreFromBreakdown(breakdownFrom(categories));
-          const landmark = scoreLandmarkGeometry(geometryFromLandmarks(landmarks[0]), blendReading.calibrated);
+          const geometry = geometryFromLandmarks(landmarks[0], transformMatrix);
+          updateCalibrationCapture(geometry);
+          const landmark = scoreLandmarkGeometry(geometry, blendReading.calibrated);
           const reading = fuseReading(blendReading, landmark);
           reportFace(reading, true);
           updateUi(reading, true);
+          drawDebugOverlay(reading, true);
         } catch (err) {
           console.error("[face] frame error:", err);
         }

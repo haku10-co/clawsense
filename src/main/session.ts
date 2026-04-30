@@ -19,7 +19,7 @@ let current: Session | null = null;
 
 function snapshot(pending: boolean): ResultPayload {
   if (!current) {
-    throw new Error("No active ClawSense session");
+    throw new Error("No active ClawBrow session");
   }
 
   return {
@@ -60,7 +60,7 @@ export function startSession(
 
 export function appendUserTurn(message: string): ResultPayload {
   if (!current) {
-    throw new Error("No active ClawSense session");
+    throw new Error("No active ClawBrow session");
   }
 
   const trimmed = message.trim();
@@ -74,7 +74,7 @@ export function appendUserTurn(message: string): ResultPayload {
 
 export async function fetchAssistantTurn(): Promise<ResultPayload> {
   if (!current) {
-    throw new Error("No active ClawSense session");
+    throw new Error("No active ClawBrow session");
   }
 
   try {

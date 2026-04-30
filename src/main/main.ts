@@ -19,6 +19,7 @@ import {
 import { ensurePromptsExist } from "./prompts";
 import {
   recordFaceSample,
+  showFaceWatcher,
   startFaceWatcher,
   stopFaceWatcher,
   type FaceSample
@@ -42,7 +43,8 @@ import {
   applySuggestionPanelBounds,
   createPromptsWindow,
   createSuggestionWindow,
-  createTrayIcon
+  createTrayIcon,
+  type SuggestionBounds
 } from "./windows";
 
 let tray: Tray | null = null;
@@ -58,10 +60,21 @@ let recentOcr = new Map<string, OcrResult | null>();
 let lastLooksStuckLogAt = 0;
 let lastLooksStuckReason: string | null = null;
 let suggestionDocked = false;
+let panelBoundsBeforeDock: SuggestionBounds | null = null;
 let shortcutRegistered = false;
+let trayThinking = false;
+let trayRefreshTimer: NodeJS.Timeout | null = null;
 
 const HOTKEY = "CommandOrControl+Shift+Space";
-const FACE_DEBUG_ENABLED = process.env.CLAWSENSE_FACE_DEBUG === "1";
+const TRAY_IDLE_TITLE = "";
+const TRAY_THINKING_TITLE = "";
+const TRAY_REFRESH_INTERVAL_MS = 5_000;
+const FACE_DEBUG_ENABLED =
+  process.env.CLAWBROW_FACE_DEBUG === "0" || process.env.CLAWSENSE_FACE_DEBUG === "0"
+    ? false
+    : process.env.CLAWBROW_FACE_DEBUG === "1" ||
+      process.env.CLAWSENSE_FACE_DEBUG === "1" ||
+      process.env.CLAWBROW_FACE_PREVIEW !== "0";
 const LOOKS_STUCK_DEBUG_ENABLED =
   FACE_DEBUG_ENABLED || process.env.CLAWSENSE_LOOKS_STUCK_DEBUG === "1";
 const PASSIVE_STUCK_ENABLED =
@@ -69,9 +82,12 @@ const PASSIVE_STUCK_ENABLED =
     ? false
     : process.env.CLAWSENSE_PASSIVE_STUCK === "1" || LOOKS_STUCK_DEBUG_ENABLED;
 const FACE_WATCHER_ENABLED =
-  PASSIVE_STUCK_ENABLED ||
-  FACE_DEBUG_ENABLED ||
-  process.env.CLAWSENSE_FACE_WATCHER === "1";
+  process.env.CLAWBROW_FACE_WATCHER === "0" || process.env.CLAWSENSE_FACE_WATCHER === "0"
+    ? false
+    : PASSIVE_STUCK_ENABLED ||
+      FACE_DEBUG_ENABLED ||
+      process.env.CLAWBROW_FACE_WATCHER === "1" ||
+      process.env.CLAWSENSE_FACE_WATCHER === "1";
 const LOOKS_STUCK_CONTEXT_ENABLED =
   PASSIVE_STUCK_ENABLED ||
   LOOKS_STUCK_DEBUG_ENABLED;
@@ -145,7 +161,8 @@ function showSuggestion(payload: SuggestionPayload): void {
   const win = ensureSuggestionWindow();
 
   suggestionDocked = false;
-  applySuggestionPanelBounds(win);
+  applySuggestionPanelBounds(win, panelBoundsBeforeDock ?? cachedBounds);
+  panelBoundsBeforeDock = win.getBounds();
   win.showInactive();
   sendPendingSuggestion();
   setTimeout(sendPendingSuggestion, 100);
@@ -171,6 +188,28 @@ function showThinkingIndicator(triggerId: string): void {
   win.showInactive();
   sendPendingSuggestion();
   setTimeout(sendPendingSuggestion, 100);
+}
+
+function compactSuggestionWindow(): void {
+  if (!suggestionWindow || suggestionWindow.isDestroyed()) {
+    return;
+  }
+  if (!suggestionDocked) {
+    panelBoundsBeforeDock = suggestionWindow.getBounds();
+  }
+  suggestionDocked = true;
+  applyDockIndicator(suggestionWindow);
+  suggestionWindow.showInactive();
+}
+
+function expandSuggestionWindow(): void {
+  if (!suggestionWindow || suggestionWindow.isDestroyed()) {
+    return;
+  }
+  suggestionDocked = false;
+  applySuggestionPanelBounds(suggestionWindow, panelBoundsBeforeDock ?? cachedBounds);
+  panelBoundsBeforeDock = suggestionWindow.getBounds();
+  suggestionWindow.showInactive();
 }
 
 function sendPendingSuggestion(): void {
@@ -200,11 +239,69 @@ function showStartupError(error: unknown): void {
   });
 }
 
-function setTrayThinking(thinking: boolean): void {
-  if (!tray || process.platform !== "darwin") {
+function currentTrayTitle(): string {
+  return trayThinking ? TRAY_THINKING_TITLE : TRAY_IDLE_TITLE;
+}
+
+function wireTrayHandlers(target: Tray): void {
+  target.on("click", () => {
+    refreshTrayMenu();
+    tray?.popUpContextMenu();
+  });
+}
+
+function ensureTray(reason: string, opts: { recreate?: boolean; log?: boolean } = {}): void {
+  if (!app.isReady()) {
     return;
   }
-  tray.setTitle(thinking ? "CS·" : "CS");
+
+  try {
+    if (opts.recreate && tray) {
+      tray.destroy();
+      tray = null;
+    }
+
+    const created = !tray;
+    if (!tray) {
+      tray = new Tray(createTrayIcon());
+      wireTrayHandlers(tray);
+    }
+
+    tray.setToolTip("ClawBrow");
+    if (process.platform === "darwin") {
+      tray.setTitle(currentTrayTitle());
+    }
+    tray.setContextMenu(buildMenu());
+
+    if (created || opts.log) {
+      void logEvent({
+        type: "tray_ready",
+        createdAt: new Date().toISOString(),
+        reason,
+        recreated: Boolean(opts.recreate),
+        title: process.platform === "darwin" ? currentTrayTitle() : null
+      });
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.stack || error.message : String(error);
+    try {
+      tray?.destroy();
+    } catch {
+      /* ignore cleanup failure */
+    }
+    tray = null;
+    void logEvent({
+      type: "tray_error",
+      createdAt: new Date().toISOString(),
+      reason,
+      message
+    });
+  }
+}
+
+function setTrayThinking(thinking: boolean): void {
+  trayThinking = thinking;
+  ensureTray("thinking");
 }
 
 function buildLooksStuckNote(state: LooksStuckState): string {
@@ -312,7 +409,7 @@ async function runAsk(source: TriggerSource, userNote?: string): Promise<void> {
       headline: "画面収録の権限が必要です",
       hint:
         accessStatus === "denied"
-          ? "システム設定 > プライバシーとセキュリティ > 画面収録 で ClawSense を許可し、アプリを再起動してください。"
+          ? "システム設定 > プライバシーとセキュリティ > 画面収録 で ClawBrow を許可し、アプリを再起動してください。"
           : "ダイアログが表示されたら『許可』を押してください。許可後はアプリの再起動が必要です。",
       actions: [],
       rawText: `screen-access status: ${accessStatus}`,
@@ -464,7 +561,7 @@ function buildMenu(): Menu {
   const lastScreenshot = lastSuggestion?.screenshotPath;
   const screenshotDir = getScreenshotsDir();
   return Menu.buildFromTemplate([
-    { label: "ClawSense に聞く", click: () => void runAsk("menu") },
+    { label: "ClawBrow に聞く", click: () => void runAsk("menu") },
     {
       label: "直前の提案を開く",
       enabled: Boolean(lastSuggestion),
@@ -482,6 +579,10 @@ function buildMenu(): Menu {
         },
         { label: "画面収録の設定を開く", click: () => openScreenRecordingSettings() },
         { label: "カメラの設定を開く", click: () => openCameraSettings() },
+        {
+          label: "Face Watcher を開く",
+          click: () => void showFaceWatcher({ preloadPath: preloadPath() })
+        },
         { type: "separator" },
         { label: "データフォルダを開く", click: () => void shell.openPath(getAppDataDir()) },
         { label: "ログフォルダを開く", click: () => void shell.openPath(getLogsDir()) },
@@ -498,7 +599,7 @@ function buildMenu(): Menu {
 }
 
 function refreshTrayMenu(): void {
-  tray?.setContextMenu(buildMenu());
+  ensureTray("refresh-menu");
 }
 
 async function persistCurrentSession(): Promise<void> {
@@ -512,6 +613,7 @@ async function persistCurrentSession(): Promise<void> {
 }
 
 app.on("second-instance", () => {
+  ensureTray("second-instance", { recreate: true, log: true });
   refreshTrayMenu();
   if (lastSuggestion) {
     showSuggestion(lastSuggestion);
@@ -523,16 +625,8 @@ process.on("unhandledRejection", showStartupError);
 
 app.whenReady().then(async () => {
   app.dock?.hide();
-  tray = new Tray(createTrayIcon());
-  tray.setToolTip("ClawSense");
-  if (process.platform === "darwin") {
-    tray.setTitle("CS");
-  }
-  tray.setContextMenu(buildMenu());
-  tray.on("click", () => {
-    refreshTrayMenu();
-    tray?.popUpContextMenu();
-  });
+  ensureTray("startup", { recreate: true, log: true });
+  trayRefreshTimer = setInterval(() => ensureTray("heartbeat"), TRAY_REFRESH_INTERVAL_MS);
 
   void logStartupDiagnostics().catch(showStartupError);
 
@@ -567,6 +661,8 @@ app.whenReady().then(async () => {
     sendResult,
     sendPendingSuggestion,
     hideSuggestionWindow: () => suggestionWindow?.hide(),
+    compactSuggestionWindow,
+    expandSuggestionWindow,
     runAsk,
     showPromptsEditor,
     onSessionUpdated: () => {
@@ -589,6 +685,12 @@ app.on("window-all-closed", () => {
 });
 
 app.on("will-quit", () => {
+  if (trayRefreshTimer) {
+    clearInterval(trayRefreshTimer);
+    trayRefreshTimer = null;
+  }
+  tray?.destroy();
+  tray = null;
   stopAppContextWatcher();
   stopFaceWatcher();
   globalShortcut.unregisterAll();

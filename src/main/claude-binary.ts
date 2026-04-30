@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { cliEnv } from "./cli-env";
 
-/* macOS GUI apps launched from Finder (a packaged ClawSense.app) inherit the
+/* macOS GUI apps launched from Finder (a packaged ClawBrow.app) inherit the
    bare LaunchServices environment, not the user's shell PATH. The `claude`
    CLI lives in places like /opt/homebrew/bin, ~/.local/bin, or
    /Applications/cmux*.app/Contents/Resources/bin and is invisible to a

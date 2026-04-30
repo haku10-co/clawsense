@@ -31,9 +31,9 @@ function ocrEnabled(): boolean {
 
 function helperPath(): string {
   if (app.isPackaged) {
-    return path.join(process.resourcesPath, "ClawSenseOCR");
+    return path.join(process.resourcesPath, "ClawBrowOCR");
   }
-  return path.join(process.cwd(), "native", "bin", "ClawSenseOCR");
+  return path.join(process.cwd(), "native", "bin", "ClawBrowOCR");
 }
 
 function truncateText(text: string): { text: string; truncated: boolean } {

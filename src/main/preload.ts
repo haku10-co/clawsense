@@ -38,6 +38,12 @@ contextBridge.exposeInMainWorld("clawSense", {
   dismiss() {
     return ipcRenderer.invoke("window:dismiss");
   },
+  compact() {
+    return ipcRenderer.invoke("window:compact");
+  },
+  expand() {
+    return ipcRenderer.invoke("window:expand");
+  },
   readPrompts(): Promise<PromptsBundle> {
     return ipcRenderer.invoke("prompts:read");
   },

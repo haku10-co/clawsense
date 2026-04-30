@@ -5,21 +5,17 @@ function rendererPath(fileName: string): string {
   return path.join(__dirname, "..", "..", "src", "renderer", fileName);
 }
 
-export function createTrayIcon(): Electron.NativeImage {
-  const svg = `
-    <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
-      <rect width="32" height="32" rx="7" fill="#111827"/>
-      <path d="M9 16c0-4 3-7 7-7s7 3 7 7-3 7-7 7-7-3-7-7z" fill="#f9fafb"/>
-      <path d="M13 16h6M16 13v6" stroke="#111827" stroke-width="2" stroke-linecap="round"/>
-    </svg>
-  `;
-
-  return nativeImage.createFromDataURL(
-    `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`
-  );
+function trayIconPath(fileName: string): string {
+  return path.join(__dirname, "..", "..", "assets", "tray", fileName);
 }
 
-type SuggestionBounds = { x: number; y: number; width: number; height: number };
+export function createTrayIcon(): Electron.NativeImage {
+  const image = nativeImage.createFromPath(trayIconPath("BrowTemplate.png"));
+  image.setTemplateImage(true);
+  return image;
+}
+
+export type SuggestionBounds = { x: number; y: number; width: number; height: number };
 
 const SUGGESTION_WIDTH = 420;
 const SUGGESTION_HEIGHT = 380;
@@ -87,13 +83,16 @@ export function createSuggestionWindow(opts: SuggestionWindowOptions): BrowserWi
   return win;
 }
 
-export function applySuggestionPanelBounds(win: BrowserWindow): void {
+export function applySuggestionPanelBounds(
+  win: BrowserWindow,
+  preferredBounds?: SuggestionBounds | null
+): void {
   if (win.isDestroyed()) {
     return;
   }
 
   const current = win.getBounds();
-  const target = usableSuggestionBounds(current);
+  const target = usableSuggestionBounds(preferredBounds ?? current);
   win.setMinimumSize(SUGGESTION_MIN_WIDTH, SUGGESTION_MIN_HEIGHT);
   win.setResizable(true);
   win.setBounds(target, false);
