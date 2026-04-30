@@ -1,5 +1,6 @@
 import { BrowserWindow, session, systemPreferences } from "electron";
 import path from "node:path";
+import { logEvent } from "../logger";
 
 /* Face watcher — main-process side.
    Owns a hidden BrowserWindow that loads face-watcher.html. The renderer
@@ -24,15 +25,37 @@ export type FaceSample = {
     compression: number;
     browDrop: number;
     browRaise: number;
+    confidence: number;
+    yawDeltaDeg?: number;
+    pitchDeltaDeg?: number;
+    trainedScore?: number | null;
     poseOk: boolean;
+    baselineReady?: boolean;
+    calibrationProgress?: number;
+    baseline: {
+      innerBrowDistance: number;
+      rawInnerBrowDistance?: number;
+      browEyeGap: number;
+      yawDeg: number;
+      rollDeg: number;
+      pitchDeg?: number;
+    };
     geometry: {
       innerBrowDistance: number;
+      yawCorrectedInnerBrowDistance: number;
       browEyeGap: number;
       browEyeGapLeft: number;
       browEyeGapRight: number;
       asymmetry: number;
       faceScale: number;
       rollDeg: number;
+      yawDeg: number;
+      approxYawDeg?: number;
+      matrixYawDeg?: number | null;
+      pitchDeg?: number;
+      matrixRollDeg?: number | null;
+      poseConsistent?: boolean;
+      yawCorrection: number;
     };
   } | null;
   breakdown?: {
@@ -44,7 +67,7 @@ export type FaceSample = {
 };
 
 const SUSTAIN_WINDOW_MS = 5_000;
-const STRUGGLE_THRESHOLD = 0.45;
+const STRUGGLE_THRESHOLD = 0.12;
 
 let watcherWindow: BrowserWindow | null = null;
 let recentSamples: { ts: number; sample: FaceSample }[] = [];
@@ -64,6 +87,42 @@ function ensureCameraPermission(): void {
     }
     callback(false);
   });
+}
+
+function debugUiEnabled(): boolean {
+  if (process.env.CLAWBROW_FACE_DEBUG === "0" || process.env.CLAWSENSE_FACE_DEBUG === "0") {
+    return false;
+  }
+  return (
+    process.env.CLAWBROW_FACE_DEBUG === "1" ||
+    process.env.CLAWSENSE_FACE_DEBUG === "1" ||
+    process.env.CLAWBROW_FACE_PREVIEW !== "0"
+  );
+}
+
+function revealWatcherWindow(reason: string): boolean {
+  if (!watcherWindow || watcherWindow.isDestroyed()) {
+    return false;
+  }
+
+  if (!debugUiEnabled()) {
+    return true;
+  }
+
+  if (watcherWindow.isMinimized()) {
+    watcherWindow.restore();
+  }
+  watcherWindow.setSkipTaskbar(false);
+  watcherWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  watcherWindow.show();
+  watcherWindow.moveTop();
+  watcherWindow.focus();
+  void logEvent({
+    type: "face_watcher_revealed",
+    createdAt: new Date().toISOString(),
+    reason
+  });
+  return true;
 }
 
 function summarize(): void {
@@ -108,6 +167,27 @@ function summarize(): void {
     landmarkSamples.length > 0
       ? landmarkSamples.filter((l) => l.poseOk).length / landmarkSamples.length
       : 0;
+  const avgCompression =
+    landmarkSamples.length > 0
+      ? landmarkSamples.reduce((acc, l) => acc + l.compression, 0) / landmarkSamples.length
+      : 0;
+  const avgBrowDrop =
+    landmarkSamples.length > 0
+      ? landmarkSamples.reduce((acc, l) => acc + l.browDrop, 0) / landmarkSamples.length
+      : 0;
+  const avgYaw =
+    landmarkSamples.length > 0
+      ? landmarkSamples.reduce((acc, l) => acc + l.geometry.yawDeg, 0) / landmarkSamples.length
+      : 0;
+  const avgPitch =
+    landmarkSamples.length > 0
+      ? landmarkSamples.reduce((acc, l) => acc + (l.geometry.pitchDeg ?? 0), 0) /
+        landmarkSamples.length
+      : 0;
+  const avgConfidence =
+    landmarkSamples.length > 0
+      ? landmarkSamples.reduce((acc, l) => acc + l.confidence, 0) / landmarkSamples.length
+      : 0;
   const overThreshold = recentSamples.filter(
     (s) => s.sample.score >= STRUGGLE_THRESHOLD
   ).length;
@@ -149,6 +229,11 @@ function summarize(): void {
       `geo=${avgLandmark.toFixed(3)} ` +
       `fused=${avgFused.toFixed(3)} ` +
       `poseOk=${poseOkRatio.toFixed(2)} ` +
+      `compress=${avgCompression.toFixed(3)} ` +
+      `drop=${avgBrowDrop.toFixed(3)} ` +
+      `yaw=${avgYaw.toFixed(1)} ` +
+      `pitch=${avgPitch.toFixed(1)} ` +
+      `conf=${avgConfidence.toFixed(2)} ` +
       `overThresh=${ratioOver.toFixed(2)}` +
       (avgBreakdown
         ? ` brow=${avgBreakdown.browDown.toFixed(3)} ` +
@@ -199,11 +284,12 @@ function scheduleRestart(opts: { preloadPath: string }, reason: string): void {
 
 export async function startFaceWatcher(opts: { preloadPath: string }): Promise<void> {
   if (watcherWindow && !watcherWindow.isDestroyed()) {
+    revealWatcherWindow("start-existing");
     return;
   }
   ensureCameraPermission();
 
-  const showDebugUi = process.env.CLAWSENSE_FACE_DEBUG === "1";
+  const showDebugUi = debugUiEnabled();
   const cameraAllowed = await ensureMacOSCameraAccess();
   if (!cameraAllowed && !showDebugUi) {
     console.warn("[face/main] camera unavailable; face watcher not started");
@@ -211,9 +297,9 @@ export async function startFaceWatcher(opts: { preloadPath: string }): Promise<v
   }
 
   watcherWindow = new BrowserWindow({
-    title: "ClawSense Face Watcher",
+    title: "ClawBrow Face Watcher",
     width: showDebugUi ? 480 : 320,
-    height: showDebugUi ? 540 : 240,
+    height: showDebugUi ? 720 : 240,
     show: showDebugUi,
     frame: showDebugUi,
     resizable: showDebugUi,
@@ -225,6 +311,13 @@ export async function startFaceWatcher(opts: { preloadPath: string }): Promise<v
       backgroundThrottling: false,
       offscreen: false
     }
+  });
+
+  void logEvent({
+    type: "face_watcher_started",
+    createdAt: new Date().toISOString(),
+    debugUi: showDebugUi,
+    cameraAllowed
   });
 
   watcherWindow.loadFile(rendererPath("face-watcher.html")).catch((err) => {
@@ -252,6 +345,15 @@ export async function startFaceWatcher(opts: { preloadPath: string }): Promise<v
   watcherWindow.on("closed", () => {
     watcherWindow = null;
   });
+  if (showDebugUi) {
+    watcherWindow.once("ready-to-show", () => revealWatcherWindow("ready-to-show"));
+    setTimeout(() => revealWatcherWindow("startup-timeout"), 800);
+  }
+}
+
+export async function showFaceWatcher(opts: { preloadPath: string }): Promise<void> {
+  await startFaceWatcher(opts);
+  revealWatcherWindow("manual");
 }
 
 export function stopFaceWatcher(): void {

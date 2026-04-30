@@ -2,7 +2,7 @@ import { app } from "electron";
 import fs from "node:fs";
 import path from "node:path";
 
-export const APP_NAME = "ClawSense";
+export const APP_NAME = "ClawBrow";
 
 export function configureAppPaths(): void {
   app.setName(APP_NAME);

@@ -63,15 +63,15 @@ const CONFIG: LooksStuckConfig = {
   windowMs: envNumber("CLAWSENSE_STUCK_WINDOW_MS", 8_000, { min: 2_000 }),
   minSpanMs: envNumber("CLAWSENSE_STUCK_MIN_SPAN_MS", 5_000, { min: 1_000 }),
   cooldownMs: envNumber("CLAWSENSE_STUCK_COOLDOWN_MS", 90_000, { min: 10_000 }),
-  scoreThreshold: envNumber("CLAWSENSE_STUCK_SCORE_THRESHOLD", 0.32, { min: 0, max: 1 }),
+  scoreThreshold: envNumber("CLAWSENSE_STUCK_SCORE_THRESHOLD", 0.3, { min: 0, max: 1 }),
   minSamples: envNumber("CLAWSENSE_STUCK_MIN_SAMPLES", 5, { min: 2 }),
   minVisibleRatio: envNumber("CLAWSENSE_STUCK_MIN_VISIBLE_RATIO", 0.6, { min: 0, max: 1 }),
   minCalibratedRatio: envNumber("CLAWSENSE_STUCK_MIN_CALIBRATED_RATIO", 0.4, {
     min: 0,
     max: 1
   }),
-  minOverRatio: envNumber("CLAWSENSE_STUCK_MIN_OVER_RATIO", 0.25, { min: 0, max: 1 }),
-  minP75Score: envNumber("CLAWSENSE_STUCK_MIN_P75_SCORE", 0.28, { min: 0, max: 1 }),
+  minOverRatio: envNumber("CLAWSENSE_STUCK_MIN_OVER_RATIO", 0.3, { min: 0, max: 1 }),
+  minP75Score: envNumber("CLAWSENSE_STUCK_MIN_P75_SCORE", 0.26, { min: 0, max: 1 }),
   minAppStability: envNumber("CLAWSENSE_STUCK_MIN_APP_STABILITY", 0.45, { min: 0, max: 1 })
 };
 

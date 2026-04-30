@@ -24,6 +24,8 @@ export type IpcDeps = {
   sendResult: (payload: ResultPayload) => void;
   sendPendingSuggestion: () => void;
   hideSuggestionWindow: () => void;
+  compactSuggestionWindow: () => void;
+  expandSuggestionWindow: () => void;
   runAsk: (source: TriggerSource, note?: string) => Promise<void>;
   showPromptsEditor: () => void;
   onSessionUpdated?: () => void;
@@ -37,6 +39,10 @@ export function registerIpcHandlers(deps: IpcDeps): void {
   ipcMain.handle("window:dismiss", (event) => {
     BrowserWindow.fromWebContents(event.sender)?.hide();
   });
+
+  ipcMain.handle("window:compact", () => deps.compactSuggestionWindow());
+
+  ipcMain.handle("window:expand", () => deps.expandSuggestionWindow());
 
   ipcMain.handle(
     "feedback:send",

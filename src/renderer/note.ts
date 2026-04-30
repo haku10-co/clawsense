@@ -39,7 +39,7 @@ function noteById<T extends HTMLElement>(id: string): T {
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     setSubmitting(true);
-    status.textContent = "ClawSense に聞いています…";
+    status.textContent = "ClawBrow に聞いています…";
 
     window.clawSense
       .retryWithNote(input.value.trim())

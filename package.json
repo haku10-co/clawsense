@@ -1,20 +1,20 @@
 {
-  "name": "clawsense",
+  "name": "clawbrow",
   "version": "0.1.0",
   "private": true,
-  "description": "A macOS menu bar layer that captures your screen, sends it to Claude Code, and proposes the next thing to do.",
+  "description": "A macOS menu bar agent that reads brow movement and your screen, then asks Claude Code to act.",
   "license": "MIT",
   "author": {
     "name": "haku10-co",
     "url": "https://github.com/haku10-co"
   },
-  "homepage": "https://github.com/haku10-co/clawsense#readme",
+  "homepage": "https://github.com/haku10-co/clawbrow#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/haku10-co/clawsense.git"
+    "url": "git+https://github.com/haku10-co/clawbrow.git"
   },
   "bugs": {
-    "url": "https://github.com/haku10-co/clawsense/issues"
+    "url": "https://github.com/haku10-co/clawbrow/issues"
   },
   "keywords": [
     "claude-code",
@@ -24,30 +24,33 @@
     "macos",
     "electron",
     "ai-agent",
-    "mcp"
+    "mcp",
+    "brow-tracking",
+    "face-landmarker"
   ],
   "main": "dist/main/main.js",
   "scripts": {
-    "build": "node build/compile-ocr-helper.cjs && tsc",
+    "build": "node build/compile-ocr-helper.cjs && swift build/generate-tray-icons.swift && tsc",
     "start": "npm run build && electron .",
     "typecheck": "tsc --noEmit",
     "pack": "npm run build && electron-builder --mac dir",
     "pack:adhoc": "npm run build && electron-builder --mac dir -c.mac.identity=-",
     "dist": "npm run build && electron-builder --mac",
-    "verify:mac": "codesign --verify --deep --strict --verbose=2 release/mac-arm64/ClawSense.app",
-    "verify:mac:release": "npm run verify:mac && spctl --assess --type execute --verbose=4 release/mac-arm64/ClawSense.app",
-    "restart:mac": "pkill -TERM -f 'ClawSense.app/Contents/MacOS/ClawSense' || true; sleep 1; pkill -9 -f 'ClawSense.app/Contents/MacOS/ClawSense' || true; open -n './release/mac-arm64/ClawSense.app'",
+    "verify:mac": "codesign --verify --deep --strict --verbose=2 release/mac-arm64/ClawBrow.app",
+    "verify:mac:release": "npm run verify:mac && spctl --assess --type execute --verbose=4 release/mac-arm64/ClawBrow.app",
+    "restart:mac": "pkill -TERM -f 'ClawBrow.app/Contents/MacOS/ClawBrow' || true; sleep 1; pkill -9 -f 'ClawBrow.app/Contents/MacOS/ClawBrow' || true; open -n './release/mac-arm64/ClawBrow.app'",
     "dev:restart": "npm run pack && npm run verify:mac && npm run restart:mac"
   },
   "build": {
-    "appId": "com.clawsense.app",
-    "productName": "ClawSense",
+    "appId": "com.clawbrow.app",
+    "productName": "ClawBrow",
     "directories": {
       "output": "release"
     },
     "afterPack": "build/after-pack.cjs",
     "files": [
       "dist/**/*",
+      "assets/**/*",
       "src/renderer/*.html",
       "src/renderer/*.css",
       "package.json",
@@ -56,13 +59,13 @@
     ],
     "extraResources": [
       {
-        "from": "native/bin/ClawSenseOCR",
-        "to": "ClawSenseOCR"
+        "from": "native/bin/ClawBrowOCR",
+        "to": "ClawBrowOCR"
       }
     ],
     "mac": {
       "category": "public.app-category.developer-tools",
-      "executableName": "ClawSense",
+      "executableName": "ClawBrow",
       "hardenedRuntime": true,
       "entitlements": "build/entitlements.mac.plist",
       "entitlementsInherit": "build/entitlements.mac.plist",
@@ -72,9 +75,9 @@
       ],
       "extendInfo": {
         "LSUIElement": true,
-        "NSScreenCaptureUsageDescription": "ClawSense は作業中の画面を Claude Code に渡して、次の方向性を提案するために画面収録を使用します。",
-        "NSAppleEventsUsageDescription": "ClawSense は現在アクティブなアプリ名を取得するために、System Events への AppleScript 送信を使用します。",
-        "NSCameraUsageDescription": "ClawSense は表情から困っている瞬間を検知するためにカメラを使用します。映像はすべて端末内で処理され、外部に送信されません。",
+        "NSScreenCaptureUsageDescription": "ClawBrow は作業中の画面を Claude Code に渡して、次の方向性を提案するために画面収録を使用します。",
+        "NSAppleEventsUsageDescription": "ClawBrow は現在アクティブなアプリ名を取得するために、System Events への AppleScript 送信を使用します。",
+        "NSCameraUsageDescription": "ClawBrow は眉や表情の動きから詰まっている瞬間を検知するためにカメラを使用します。映像はすべて端末内で処理され、外部に送信されません。",
         "NSCameraUseContinuityCameraDeviceType": true
       }
     },

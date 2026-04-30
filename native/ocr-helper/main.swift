@@ -39,7 +39,7 @@ func fail(_ message: String) -> Never {
 
 let args = CommandLine.arguments.dropFirst()
 guard let imagePath = args.first else {
-  fail("usage: ClawSenseOCR <image-path>")
+  fail("usage: ClawBrowOCR <image-path>")
 }
 
 let imageUrl = URL(fileURLWithPath: imagePath)

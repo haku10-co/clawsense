@@ -133,6 +133,7 @@ function initSuggestion(): void {
   const threadForm = byId<HTMLFormElement>("thread-form");
   const threadInput = byId<HTMLTextAreaElement>("thread-input");
   const threadSend = threadForm.querySelector<HTMLButtonElement>(".thread-send");
+  const suggestionCard = document.querySelector<HTMLElement>(".suggestion-card");
 
   function sendPickerFeedback(
     feedback: FeedbackValue,
@@ -197,7 +198,7 @@ function initSuggestion(): void {
     }
     threadInput.disabled = payload.pending;
     setDisabled(resultButtons, payload.pending);
-    resultStatus.textContent = payload.pending ? "ClawSense が考えています…" : "";
+    resultStatus.textContent = payload.pending ? "ClawBrow が考えています…" : "";
 
     if (!payload.pending) {
       threadInput.focus();
@@ -214,11 +215,38 @@ function initSuggestion(): void {
 
   const topClose = document.getElementById("top-close");
   if (topClose) {
-    topClose.addEventListener("click", () => void window.clawSense.dismiss());
+    topClose.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void window.clawSense.dismiss();
+    });
+  }
+
+  const topCompact = document.getElementById("top-compact");
+  if (topCompact) {
+    topCompact.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      document.body.dataset.compact = "true";
+      void window.clawSense.compact();
+    });
+  }
+
+  if (suggestionCard) {
+    suggestionCard.addEventListener("click", (event) => {
+      if (document.body.dataset.compact !== "true") {
+        return;
+      }
+      event.preventDefault();
+      document.body.dataset.compact = "false";
+      void window.clawSense.expand();
+    });
   }
 
   document.querySelectorAll<HTMLButtonElement>('[data-action="settings"]').forEach((button) => {
-    button.addEventListener("click", () => void window.clawSense.openSettings());
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      void window.clawSense.openSettings();
+    });
   });
 
   const noteForm = document.getElementById("picker-note-form") as HTMLFormElement | null;
