@@ -11,6 +11,7 @@ declare global {
       onSuggestion(callback: (payload: SuggestionPayload) => void): void;
       onResult(callback: (payload: ResultPayload) => void): void;
       onResultToast(callback: (message: string) => void): void;
+      onSettingsUpdate(callback: (settings: AppSettings) => void): void;
       suggestionReady(): Promise<void>;
       onNoteFocus(callback: () => void): void;
       retryWithNote(note: string): Promise<void>;

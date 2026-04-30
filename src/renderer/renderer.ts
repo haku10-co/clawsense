@@ -307,6 +307,15 @@ function initSuggestion(): void {
   }
 
   setDisabled(pickerButtons, true);
+  window.clawSense.onSettingsUpdate((settings) => {
+    language = settings.language;
+    applyLanguageUi();
+    if (document.body.dataset.state === "picker" && suggestion) {
+      renderPicker(suggestion);
+    } else if (document.body.dataset.state === "result" && result) {
+      renderResult(result);
+    }
+  });
   window.clawSense
     .readSettings()
     .then((settings) => {

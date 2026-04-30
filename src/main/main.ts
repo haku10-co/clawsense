@@ -678,7 +678,8 @@ app.whenReady().then(async () => {
     onSessionUpdated: () => {
       void persistCurrentSession();
     },
-    onSettingsUpdated: () => {
+    onSettingsUpdated: (settings) => {
+      suggestionWindow?.webContents.send("settings:update", settings);
       refreshTrayMenu();
     }
   });

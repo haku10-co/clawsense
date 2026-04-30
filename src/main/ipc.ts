@@ -31,7 +31,7 @@ export type IpcDeps = {
   runAsk: (source: TriggerSource, note?: string) => Promise<void>;
   showPromptsEditor: () => void;
   onSessionUpdated?: () => void;
-  onSettingsUpdated?: () => void;
+  onSettingsUpdated?: (settings: AppSettings) => void;
 };
 
 export function registerIpcHandlers(deps: IpcDeps): void {
@@ -134,12 +134,12 @@ export function registerIpcHandlers(deps: IpcDeps): void {
   ipcMain.handle("settings:read", () => readSettings());
   ipcMain.handle("settings:save", async (_event, settings: AppSettings) => {
     const saved = await saveSettings(settings);
-    deps.onSettingsUpdated?.();
+    deps.onSettingsUpdated?.(saved);
     return saved;
   });
   ipcMain.handle("settings:set-language", async (_event, language: AppLanguage) => {
     const saved = await saveSettings({ language });
-    deps.onSettingsUpdated?.();
+    deps.onSettingsUpdated?.(saved);
     return { settings: saved, prompts: await readAllPrompts(saved.language) };
   });
 

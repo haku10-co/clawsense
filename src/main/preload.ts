@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld("clawSense", {
   onResultToast(callback: (message: string) => void) {
     ipcRenderer.on("result:toast", (_event, message: string) => callback(message));
   },
+  onSettingsUpdate(callback: (settings: AppSettings) => void) {
+    ipcRenderer.on("settings:update", (_event, settings: AppSettings) => callback(settings));
+  },
   suggestionReady() {
     return ipcRenderer.invoke("suggestion:ready");
   },
